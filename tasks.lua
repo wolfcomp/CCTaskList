@@ -1,13 +1,15 @@
 -- Task client: sends commands to the hub from any computer or pocket computer with a modem.
 -- Usage: tasks <command> [args]   (one-shot)
---        tasks                    (interactive prompt)
+--        tasks                    (clickable UI on advanced/pocket computers, text prompt otherwise)
+--        tasks gui | tasks cli    (force the clickable UI or the text prompt)
 
 local pager = require("pager")
 
 local PROTOCOL = "tasklist"
+local STATE_PROTOCOL = "tasklist_state"
+local UPDATE_PROTOCOL = "tasklist_update"
 local HOSTNAME = "hub"
 local TIMEOUT = 3
-local UPDATE_PROTOCOL = "tasklist_update"
 local PERSON_SETTING = "tasks.person"
 
 -- Commands whose first argument is a person, so a remembered name can stand in for it.
@@ -27,16 +29,24 @@ local function currentPerson()
   if name and name ~= "" then return name end
 end
 
+local function rememberPerson(name)
+  if name then
+    settings.set(PERSON_SETTING, name)
+  else
+    settings.unset(PERSON_SETTING)
+  end
+  settings.save()
+end
+
 local hub
+-- Returns the hub's id, or nil and why it can't be reached. Errors are returned rather than
+-- printed so the clickable UI can show them in its status line instead of over the screen.
 local function findHub()
   if hub then return hub end
   peripheral.find("modem", rednet.open)
-  if not rednet.isOpen() then
-    printError("No modem attached.")
-    return
-  end
+  if not rednet.isOpen() then return nil, "No modem attached." end
   hub = rednet.lookup(PROTOCOL, HOSTNAME)
-  if not hub then printError("Task hub not found. Is it running and in range?") end
+  if not hub then return nil, "Task hub not found. Is it running and in range?" end
   return hub
 end
 
@@ -60,20 +70,20 @@ local function resolve(line)
   return table.concat(args, " ")
 end
 
--- Returns ok, output lines; nil if the hub couldn't be reached.
-local function send(line)
-  if not findHub() then return end
-  rednet.send(hub, { line = resolve(line) }, PROTOCOL)
+-- Sends a command exactly as given. Returns ok, output lines; or nil, error message.
+local function sendRaw(line)
+  local id, err = findHub()
+  if not id then return nil, err end
+  rednet.send(id, { line = line }, PROTOCOL)
   local deadline = os.clock() + TIMEOUT
   while true do
     local remaining = deadline - os.clock()
     if remaining <= 0 then
-      printError("No reply from hub.")
       hub = nil
-      return
+      return nil, "No reply from hub."
     end
-    local id, reply = rednet.receive(PROTOCOL, remaining)
-    if id == hub and type(reply) == "table" then
+    local from, reply = rednet.receive(PROTOCOL, remaining)
+    if from == id and type(reply) == "table" then
       return reply.ok, reply.out or {}
     end
   end
@@ -86,14 +96,13 @@ local function setPerson(name)
     return
   end
   if name == "-" or name:lower() == "none" then
-    settings.unset(PERSON_SETTING)
+    rememberPerson(nil)
     print("Forgot person. Commands need a name again.")
   else
     name = name:match("^@?(.+)")
-    settings.set(PERSON_SETTING, name)
+    rememberPerson(name)
     print("Adding tasks as " .. name)
   end
-  settings.save()
 end
 
 local function handle(line)
@@ -104,8 +113,11 @@ local function handle(line)
     setPerson(rest ~= "" and rest:match("%S+") or nil)
     return
   end
-  local ok, out = send(line)
-  if ok == nil then return end
+  local ok, out = sendRaw(resolve(line))
+  if ok == nil then
+    printError(out)
+    return
+  end
   if cmd == "help" then
     out[#out + 1] = "as [name|none] - remember who you are"
     out[#out + 1] = "With a name remembered, <person> can be left out; use @name for someone else."
@@ -116,10 +128,13 @@ local function handle(line)
 end
 
 local args = { ... }
-if #args > 0 then
+local mode = args[1] and args[1]:lower()
+if #args > 0 and mode ~= "gui" and mode ~= "cli" then
   handle(table.concat(args, " "))
   return
 end
+-- Basic computers get no mouse events, so they stay on the text prompt.
+local useGui = mode == "gui" or (mode == nil and term.isColour())
 
 -- Returns the number of files update.lua changed (0 if it is missing or fails).
 local function runUpdater(...)
@@ -141,25 +156,10 @@ local function runUpdater(...)
   return tonumber(res) or 0
 end
 
-if not findHub() then return end
-local hubId = hub
-print("Connected to task hub #" .. hub .. ". Type 'help', or 'exit' to quit.")
-setPerson()
-
-local function promptLoop()
-  local history = {}
-  while true do
-    local person = currentPerson()
-    setColor(colors.yellow)
-    write(person and ("tasks (" .. person .. ")> ") or "tasks> ")
-    setColor(colors.white)
-    local line = read(nil, history)
-    if line == "exit" then return end
-    if line:match("%S") then
-      history[#history + 1] = line
-      handle(line)
-    end
-  end
+local hubId, hubErr = findHub()
+if not hubId then
+  printError(hubErr)
+  return
 end
 
 local restart = false
@@ -168,20 +168,76 @@ local function updateListener()
     -- hub can be cleared by a timed-out command, so match against the id we connected to.
     local id, msg = rednet.receive(UPDATE_PROTOCOL)
     if id == hubId and type(msg) == "table" and msg.update then
-      print()
+      if useGui then
+        term.setBackgroundColor(colors.black)
+        term.clear()
+        term.setCursorPos(1, 1)
+      else
+        print()
+      end
       print("Hub announced an update.")
       local changed = type(msg.ref) == "string" and runUpdater("--ref", msg.ref) or runUpdater()
       if changed > 0 then
         restart = true
         return
       end
+      -- Nothing changed: have the UI repaint over the updater's output.
+      os.queueEvent("task_state")
     end
   end
 end
 
-parallel.waitForAny(promptLoop, updateListener)
+if useGui then
+  local taskgui = require("taskgui")
+  local state = {}
+
+  local function stateListener()
+    while true do
+      local id, msg = rednet.receive(STATE_PROTOCOL)
+      if id == hubId and type(msg) == "table" and type(msg.people) == "table" then
+        state.people = msg.people
+        os.queueEvent("task_state")
+      end
+    end
+  end
+
+  local function gui()
+    taskgui.run({
+      state = state,
+      send = sendRaw,
+      requestState = function() rednet.send(hubId, { get = true }, PROTOCOL) end,
+      me = currentPerson,
+      remember = rememberPerson,
+    })
+  end
+
+  -- The listener runs in its own coroutine so state pushes aren't lost while the UI is
+  -- blocked waiting for a command reply.
+  parallel.waitForAny(gui, stateListener, updateListener)
+else
+  print("Connected to task hub #" .. hubId .. ". Type 'help', or 'exit' to quit.")
+  setPerson()
+
+  local function promptLoop()
+    local history = {}
+    while true do
+      local person = currentPerson()
+      setColor(colors.yellow)
+      write(person and ("tasks (" .. person .. ")> ") or "tasks> ")
+      setColor(colors.white)
+      local line = read(nil, history)
+      if line == "exit" then return end
+      if line:match("%S") then
+        history[#history + 1] = line
+        handle(line)
+      end
+    end
+  end
+
+  parallel.waitForAny(promptLoop, updateListener)
+end
 
 if restart then
   print("tasks updated, restarting...")
-  shell.run(shell.getRunningProgram())
+  shell.run(shell.getRunningProgram(), table.unpack(args))
 end

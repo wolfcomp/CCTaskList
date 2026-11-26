@@ -27,6 +27,7 @@ local function wrap(text, width)
   if #line > 0 or #lines == 0 then lines[#lines + 1] = line end
   return lines
 end
+M.wrap = wrap
 
 local function setBackground(c)
   if term.isColour() then term.setBackgroundColor(c) end

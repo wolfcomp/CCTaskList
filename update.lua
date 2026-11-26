@@ -18,11 +18,11 @@ local ROLES = {
   display = { "display.lua" },
   client = { "tasks.lua" },
 }
-local KNOWN = { "hub.lua", "display.lua", "taskview.lua", "pager.lua", "tasks.lua", "update.lua" }
+local KNOWN = { "hub.lua", "display.lua", "taskview.lua", "pager.lua", "taskgui.lua", "tasks.lua", "update.lua" }
 local DEPENDS = {
   ["hub.lua"] = { "taskview.lua", "pager.lua" },
   ["display.lua"] = { "taskview.lua" },
-  ["tasks.lua"] = { "pager.lua" },
+  ["tasks.lua"] = { "pager.lua", "taskgui.lua" },
 }
 -- A program copied to startup.lua is recognised by its first line, so these headers must
 -- stay unchanged in the repository files.

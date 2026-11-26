@@ -25,6 +25,7 @@ block column is one person: their current task at the top, the queue below it.
 | `taskview.lua` | Hub and every display node      | Shared monitor drawing code (required by both)  |
 | `tasks.lua`    | Any computer / pocket computer  | Remote control of the hub over rednet           |
 | `pager.lua`    | Hub and every `tasks` client    | Wraps and pages long replies to fit the screen  |
+| `taskgui.lua`  | Every `tasks` client            | Clickable task UI for advanced/pocket computers |
 | `update.lua`   | Optional, on any of the above   | Pulls the latest files from a git repository    |
 
 ## Setup
@@ -38,8 +39,49 @@ block column is one person: their current task at the top, the queue below it.
    `saves/<world>/computercraft/computer/<id>/`.
 4. To start it on boot, create `startup.lua` on the hub containing
    `shell.run("hub")`.
-5. Copy `tasks.lua` and `pager.lua` onto each player's computer or wireless pocket
-   computer (or use `update client`, see below).
+5. Copy `tasks.lua`, `pager.lua` and `taskgui.lua` onto each player's computer or
+   wireless pocket computer (or use `update client`, see below).
+
+### Clickable UI
+
+Running `tasks` with no arguments on an **advanced** computer or **advanced pocket
+computer** opens a clickable UI. Basic computers have no mouse, so they get the text
+prompt instead. `tasks cli` forces the prompt and `tasks gui` forces the UI.
+
+```
++--------------------------+
+|<<      Alex (me)     >> x|  tap < > to switch person, the name for People
+|1 Fix the reactor         |  yellow 1 = current task
+|2 Sort chests             |  tap a task to select it (highlighted)
+|3 Craft pipes for the    ^|  scroll bar appears when the list is long
+|  north base             v|  (mouse wheel and Up/Down also scroll)
+|                          |
+|  Add    Done #2   Top #2 |
+|  Skip    Clear      Me   |
+|Done: Sort chests         |  status line / typing line
++--------------------------+
+```
+
+| Button   | Action                                                         |
+|----------|----------------------------------------------------------------|
+| Add      | Type a task on the bottom row, Enter to add (blank cancels)    |
+| Done     | Finish the selected task, or the current one if none selected  |
+| Top      | Make the selected task the current one                         |
+| Skip     | Send the current task to the back                              |
+| Clear    | Remove all of this person's tasks (asks Yes/No first)          |
+| Me / Not me | Remember (or forget) this person as you, like `tasks as`    |
+| x        | Close the UI                                                   |
+
+The **People** screen (tap the name in the header) lists everyone with their task
+count. Tap a person to select them and tap again (or **Open**) to view their tasks.
+**New** adds a person (one-word name), and **Remove** deletes the selected person
+after a Yes/No check.
+
+The UI updates live: the hub pushes every change, so other people's edits show up
+straight away, and it re-syncs every 30 seconds in case a push was missed. Update
+notices from `pushupdate` still apply while the UI is open.
+
+### Text replies
 
 Replies are wrapped to the screen width. The bottom row is kept for typing: a reply
 that fits in the rows above it prints normally. A taller one (such as `help` on a
