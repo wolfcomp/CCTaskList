@@ -147,8 +147,12 @@ After that:
 - You can paste the repository page URL: GitHub, GitLab, Codeberg/Gitea/Forgejo
   links (including `/tree/<branch>/<folder>` style links) are converted to raw-file
   URLs. Any other host: give the raw base URL, so that `<url>/hub.lua` is the file.
-- Every file is downloaded before anything is written, so a failed fetch leaves
-  the computer on its old version.
+- `update.lua` updates itself first. If the repository has a newer updater, it
+  checks that the new copy loads, saves it, and lets the new version finish the run
+  at the same commit. New files or changed dependencies are then handled by the
+  updater that knows about them.
+- Every other file is downloaded before anything is written, so a failed fetch
+  leaves the computer on its old version.
 - Saved data (`tasks.dat`, `.settings`) is never touched.
 - If a task program was installed *as* `startup.lua` (or `startup`), the updater
   recognises it by its first line (`-- Task hub:`, `-- Display node:`, ...) and

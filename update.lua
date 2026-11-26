@@ -150,7 +150,7 @@ local function detectStartup()
   end
 end
 
-local args, ref = {}, nil
+local args, ref, selfUpdated = {}, nil, false
 do
   local raw = { ... }
   local i = 1
@@ -158,6 +158,9 @@ do
     if raw[i] == "--ref" then
       ref = raw[i + 1]
       i = i + 2
+    elseif raw[i] == "--self-updated" then
+      selfUpdated = true
+      i = i + 1
     else
       args[#args + 1] = raw[i]
       i = i + 1
@@ -227,6 +230,44 @@ local bust = not isCommit(useRef)
 if cmd == "ref" then
   if useRef then print(useRef) end
   return useRef
+end
+
+-- The updater replaces itself first and hands over to the new copy, so file lists, dependencies
+-- and URL handling always come from the same version as the files being installed.
+if cmd ~= "check" and not selfUpdated then
+  local selfPath = fs.combine(dir, "update.lua")
+  local body, err = fetch(base .. "/update.lua", bust)
+  if not body then
+    printError("Update aborted: could not fetch update.lua: " .. tostring(err))
+    return
+  end
+  if readLocal(selfPath) ~= body then
+    -- Compile before writing, so a broken download can't replace a working updater.
+    local fn, loadErr = load(body, "=update.lua", "t", _ENV)
+    if not fn then
+      printError("Update aborted: downloaded update.lua does not load: " .. tostring(loadErr))
+      return
+    end
+    writeLocal(selfPath, body)
+    setColor(colors.yellow)
+    print("  changed update.lua, continuing with the new version")
+    setColor(colors.white)
+
+    -- --self-updated stops the new copy from replacing itself again, and passing the ref keeps
+    -- both halves of the run on the same commit without another API call.
+    local rerun = { "--self-updated" }
+    if useRef then
+      rerun[#rerun + 1] = "--ref"
+      rerun[#rerun + 1] = useRef
+    end
+    for _, a in ipairs(args) do rerun[#rerun + 1] = a end
+    local ok, res = pcall(fn, table.unpack(rerun))
+    if not ok then
+      printError(res)
+      return 1
+    end
+    return (tonumber(res) or 0) + 1
+  end
 end
 
 -- targets: { name = file in the repository, path = where it lives on this computer }
