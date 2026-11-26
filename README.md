@@ -156,7 +156,15 @@ After that:
   wrapper startup like `shell.run("hub")` isn't a copy, so it is left alone.
   To override detection: `set tasks.startup_file hub.lua`, or
   `set tasks.startup_file none` to never touch startup.
-- GitHub's raw CDN caches files for up to about 5 minutes after a push.
+- GitHub's raw CDN keeps serving old copies of a branch for minutes after a push,
+  so on GitHub the updater asks the API for the branch's latest commit and downloads
+  `raw.githubusercontent.com/<user>/<repo>/<commit>/...` instead. A commit URL
+  never serves stale files. `update ref` prints the hash it would use.
+- `--ref <commit|branch|tag>` on any update command pulls that exact version
+  (handy for rolling back: `update --ref 66c0ea7...`, the full 40-character hash).
+- If the GitHub API is rate limited (60 requests an hour per server IP), or the
+  repository isn't on GitHub, it falls back to the branch URL with `no-cache`
+  headers and a unique `?nocache=` query string to force a cache miss.
 - A fork can change `DEFAULT_URL` / `DEFAULT_BRANCH` at the top of `update.lua`
   so its computers don't need the `update url` step.
 
@@ -172,7 +180,9 @@ shell.run("hub")   -- or "display"
 
 After pushing to git, type `pushupdate` at the `hub>` console. The hub:
 
-1. Broadcasts an update notice to everything listening on rednet.
+1. Looks up the latest commit and broadcasts an update notice carrying that hash,
+   so every remote installs exactly the same version without asking the GitHub
+   API itself.
 2. Runs its own updater and, if anything changed, restarts itself on the new
    version. Tasks are kept, because they're saved in `tasks.dat`.
 
@@ -185,8 +195,7 @@ On receiving the notice (only from the hub they're connected to):
 Every remote needs `update.lua` installed for this to work. A computer that's off,
 out of range or in an unloaded chunk misses the notice. Running `update` from
 `startup.lua` covers those the next time they boot. `pushupdate` only works at the
-hub console, so a remote client can't trigger a network-wide update. If GitHub's
-cache hasn't caught up with your push yet, wait a few minutes and run it again.
+hub console, so a remote client can't trigger a network-wide update.
 
 ## Config
 

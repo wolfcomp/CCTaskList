@@ -166,7 +166,8 @@ local function updateListener()
     if id == hubId and type(msg) == "table" and msg.update then
       print()
       print("Hub announced an update.")
-      if runUpdater() > 0 then
+      local changed = type(msg.ref) == "string" and runUpdater("--ref", msg.ref) or runUpdater()
+      if changed > 0 then
         restart = true
         return
       end

@@ -196,34 +196,40 @@ local function setColor(c)
   if term.isColour() then term.setTextColor(c) end
 end
 
--- Returns the number of files update.lua changed (0 if it is missing or fails).
+-- Returns whatever update.lua returns (nil if it is missing or fails).
 local function runUpdater(...)
   local path = fs.combine(fs.getDir(shell.getRunningProgram()), "update.lua")
   if not fs.exists(path) then
     printError("update.lua is not installed here.")
-    return 0
+    return nil
   end
   local fn, err = loadfile(path, nil, _ENV)
   if not fn then
     printError(err)
-    return 0
+    return nil
   end
   local ok, res = pcall(fn, ...)
   if not ok then
     printError(res)
-    return 0
+    return nil
   end
-  return tonumber(res) or 0
+  return res
 end
 
 local function pushUpdate()
+  -- Resolving the commit once here means every remote installs the same version, and only
+  -- the hub spends a call against GitHub's per-IP API rate limit.
+  local ref = runUpdater("ref")
+  if type(ref) ~= "string" then ref = nil end
   if rednet.isOpen() then
-    rednet.broadcast({ update = true }, UPDATE_PROTOCOL)
-    print("Told display nodes and clients to update.")
+    rednet.broadcast({ update = true, ref = ref }, UPDATE_PROTOCOL)
+    print("Told display nodes and clients to update" .. (ref and (" to " .. ref:sub(1, 7)) or "") .. ".")
   else
     printError("No modem: remotes can't be told to update.")
   end
-  return runUpdater() > 0
+  local changed
+  if ref then changed = runUpdater("--ref", ref) else changed = runUpdater() end
+  return (tonumber(changed) or 0) > 0
 end
 
 local restart = false

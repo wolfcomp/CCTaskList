@@ -77,7 +77,8 @@ local function netLoop()
     elseif ev == "rednet_message" and c == UPDATE_PROTOCOL and hub and a == hub
         and type(b) == "table" and b.update then
       print("Hub announced an update.")
-      if runUpdater() > 0 then return true end
+      local changed = type(b.ref) == "string" and runUpdater("--ref", b.ref) or runUpdater()
+      if changed > 0 then return true end
     end
   end
 end
