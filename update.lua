@@ -7,8 +7,8 @@
 local URL_SETTING = "tasks.update_url"
 local BRANCH_SETTING = "tasks.update_branch"
 local STARTUP_SETTING = "tasks.startup_file"
-local DEFAULT_URL = nil -- e.g. "https://github.com/you/CCTaskList"
-local DEFAULT_BRANCH = "main"
+local DEFAULT_URL = "https://github.com/wolfcomp/CCTaskList"
+local DEFAULT_BRANCH = "master"
 
 local ROLES = {
   hub = { "hub.lua" },

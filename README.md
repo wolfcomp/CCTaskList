@@ -117,16 +117,21 @@ can start with any word. Without a remembered person, commands work as before.
 
 ## Updates from git
 
-Push these files to a git repository (all in one folder), then any computer can
-pull new versions with `update.lua`. It needs the CC:Tweaked HTTP API enabled
-(the default) and a host the server can reach.
+`update.lua` pulls new versions from
+[wolfcomp/CCTaskList](https://github.com/wolfcomp/CCTaskList) (branch `master`)
+by default. It needs the CC:Tweaked HTTP API enabled (the default).
 
 One-time setup on a computer:
 
 ```
-wget https://raw.githubusercontent.com/<you>/<repo>/main/update.lua update.lua
-update url https://github.com/<you>/<repo>        -- optional: add a branch name after it
+wget https://raw.githubusercontent.com/wolfcomp/CCTaskList/master/update.lua update.lua
 update hub                                        -- or: display / client
+```
+
+To pull from a fork or another branch instead:
+
+```
+update url https://github.com/<you>/<repo> [branch]
 ```
 
 After that:
@@ -151,8 +156,8 @@ After that:
   To override detection: `set tasks.startup_file hub.lua`, or
   `set tasks.startup_file none` to never touch startup.
 - GitHub's raw CDN caches files for up to about 5 minutes after a push.
-- Set `DEFAULT_URL` at the top of `update.lua` before pushing it, and new computers
-  won't need the `update url` step.
+- A fork can change `DEFAULT_URL` / `DEFAULT_BRANCH` at the top of `update.lua`
+  so its computers don't need the `update url` step.
 
 To check for updates on every boot, run the updater first in `startup.lua`. If the
 repository can't be reached, the program still starts on its current version:
