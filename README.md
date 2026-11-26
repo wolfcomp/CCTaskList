@@ -144,6 +144,12 @@ After that:
 - Every file is downloaded before anything is written, so a failed fetch leaves
   the computer on its old version.
 - Saved data (`tasks.dat`, `.settings`) is never touched.
+- If a task program was installed *as* `startup.lua` (or `startup`), the updater
+  recognises it by its first line (`-- Task hub:`, `-- Display node:`, ...) and
+  updates it too, along with the files it needs next to it (`taskview.lua`). A
+  wrapper startup like `shell.run("hub")` isn't a copy, so it is left alone.
+  To override detection: `set tasks.startup_file hub.lua`, or
+  `set tasks.startup_file none` to never touch startup.
 - GitHub's raw CDN caches files for up to about 5 minutes after a push.
 - Set `DEFAULT_URL` at the top of `update.lua` before pushing it, and new computers
   won't need the `update url` step.
