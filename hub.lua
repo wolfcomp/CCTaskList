@@ -1,6 +1,7 @@
 -- Task hub: stores everyone's tasks, serves them over rednet and shows them on a monitor.
 
 local taskview = require("taskview")
+local pager = require("pager")
 
 local PROTOCOL = "tasklist"
 -- Kept separate from PROTOCOL so state pushes never get mistaken for a command reply.
@@ -251,10 +252,14 @@ local function cliLoop()
       end
     else
       local ok, out = run(line)
-      setColor(ok and colors.white or colors.red)
-      for _, l in ipairs(out) do print(l) end
-      setColor(colors.white)
-      if line == "help" then print("pushupdate - update remotes, then this hub (console only)") end
+      if line == "help" then
+        -- Copied so the shared help list sent to remote clients doesn't gain the console-only entry.
+        local lines = { table.unpack(out) }
+        lines[#lines + 1] = "pushupdate - update remotes, then this hub (console only)"
+        pager.help(lines)
+      else
+        pager.lines(out, ok and colors.white or colors.red)
+      end
     end
   end
 end

@@ -2,6 +2,8 @@
 -- Usage: tasks <command> [args]   (one-shot)
 --        tasks                    (interactive prompt)
 
+local pager = require("pager")
+
 local PROTOCOL = "tasklist"
 local HOSTNAME = "hub"
 local TIMEOUT = 3
@@ -58,6 +60,7 @@ local function resolve(line)
   return table.concat(args, " ")
 end
 
+-- Returns ok, output lines; nil if the hub couldn't be reached.
 local function send(line)
   if not findHub() then return end
   rednet.send(hub, { line = resolve(line) }, PROTOCOL)
@@ -71,10 +74,7 @@ local function send(line)
     end
     local id, reply = rednet.receive(PROTOCOL, remaining)
     if id == hub and type(reply) == "table" then
-      setColor(reply.ok and colors.white or colors.red)
-      for _, l in ipairs(reply.out or {}) do print(l) end
-      setColor(colors.white)
-      return
+      return reply.ok, reply.out or {}
     end
   end
 end
@@ -104,10 +104,14 @@ local function handle(line)
     setPerson(rest ~= "" and rest:match("%S+") or nil)
     return
   end
-  send(line)
+  local ok, out = send(line)
+  if ok == nil then return end
   if cmd == "help" then
-    print("as [name|none] - remember who you are")
-    print("With a name remembered, <person> can be left out; use @name for someone else.")
+    out[#out + 1] = "as [name|none] - remember who you are"
+    out[#out + 1] = "With a name remembered, <person> can be left out; use @name for someone else."
+    pager.help(out)
+  else
+    pager.lines(out, ok and colors.white or colors.red)
   end
 end
 

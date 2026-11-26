@@ -24,6 +24,7 @@ block column is one person: their current task at the top, the queue below it.
 | `display.lua`  | Each display node               | Mirrors the hub's board on its own monitor      |
 | `taskview.lua` | Hub and every display node      | Shared monitor drawing code (required by both)  |
 | `tasks.lua`    | Any computer / pocket computer  | Remote control of the hub over rednet           |
+| `pager.lua`    | Hub and every `tasks` client    | Wraps and pages long replies to fit the screen  |
 | `update.lua`   | Optional, on any of the above   | Pulls the latest files from a git repository    |
 
 ## Setup
@@ -32,12 +33,28 @@ block column is one person: their current task at the top, the queue below it.
    1 wide and 2 tall (touching the computer or via wired modems).
 2. Attach a **Wireless** or **Ender Modem** to the hub if people should manage
    tasks remotely or you want display nodes.
-3. Copy `hub.lua` and `taskview.lua` into the same folder on the hub. Either paste
+3. Copy `hub.lua`, `taskview.lua` and `pager.lua` into the same folder on the hub. Either paste
    them with `edit`, or drop the files into
    `saves/<world>/computercraft/computer/<id>/`.
 4. To start it on boot, create `startup.lua` on the hub containing
    `shell.run("hub")`.
-5. Copy `tasks.lua` onto each player's computer or wireless pocket computer.
+5. Copy `tasks.lua` and `pager.lua` onto each player's computer or wireless pocket
+   computer (or use `update client`, see below).
+
+Replies are wrapped to the screen width. The bottom row is kept for typing: a reply
+that fits in the rows above it prints normally. A taller one (such as `help` on a
+26x20 pocket computer) opens a pager: rows 1-19 show one page and row 20 is a
+navigation bar (`1/3 Space B:back Q:done`).
+
+| Key                                | Action                    |
+|------------------------------------|---------------------------|
+| Space, Enter, Down, Page Down, `n` | Next page (done on last)  |
+| `b`, Up, Page Up, `p`              | Previous page             |
+| `q`                                | Done                      |
+
+When you're done, the last page stays on rows 1-19 and the prompt comes back on
+row 20. On narrow screens, `help` puts each command on its own line with the
+description indented below it.
 
 ### Display nodes
 
@@ -156,7 +173,7 @@ After that:
 - Saved data (`tasks.dat`, `.settings`) is never touched.
 - If a task program was installed *as* `startup.lua` (or `startup`), the updater
   recognises it by its first line (`-- Task hub:`, `-- Display node:`, ...) and
-  updates it too, along with the files it needs next to it (`taskview.lua`). A
+  updates it too, along with the files it needs next to it (`taskview.lua`, `pager.lua`). A
   wrapper startup like `shell.run("hub")` isn't a copy, so it is left alone.
   To override detection: `set tasks.startup_file hub.lua`, or
   `set tasks.startup_file none` to never touch startup.
