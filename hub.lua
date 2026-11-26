@@ -5,6 +5,7 @@ local taskview = require("taskview")
 local PROTOCOL = "tasklist"
 -- Kept separate from PROTOCOL so state pushes never get mistaken for a command reply.
 local STATE_PROTOCOL = "tasklist_state"
+local UPDATE_PROTOCOL = "tasklist_update"
 local HOSTNAME = "hub"
 local DATA_FILE = "tasks.dat"
 local MONITOR_NAME = nil -- e.g. "top" or "monitor_0"; nil uses the first monitor found
@@ -195,6 +196,38 @@ local function setColor(c)
   if term.isColour() then term.setTextColor(c) end
 end
 
+-- Returns the number of files update.lua changed (0 if it is missing or fails).
+local function runUpdater(...)
+  local path = fs.combine(fs.getDir(shell.getRunningProgram()), "update.lua")
+  if not fs.exists(path) then
+    printError("update.lua is not installed here.")
+    return 0
+  end
+  local fn, err = loadfile(path, nil, _ENV)
+  if not fn then
+    printError(err)
+    return 0
+  end
+  local ok, res = pcall(fn, ...)
+  if not ok then
+    printError(res)
+    return 0
+  end
+  return tonumber(res) or 0
+end
+
+local function pushUpdate()
+  if rednet.isOpen() then
+    rednet.broadcast({ update = true }, UPDATE_PROTOCOL)
+    print("Told display nodes and clients to update.")
+  else
+    printError("No modem: remotes can't be told to update.")
+  end
+  return runUpdater() > 0
+end
+
+local restart = false
+
 local function cliLoop()
   local history = {}
   while true do
@@ -204,10 +237,19 @@ local function cliLoop()
     local line = read(nil, history)
     if line:match("%S") then history[#history + 1] = line end
     if line == "exit" then return end
-    local ok, out = run(line)
-    setColor(ok and colors.white or colors.red)
-    for _, l in ipairs(out) do print(l) end
-    setColor(colors.white)
+    -- Kept off the rednet command set so a remote client can't trigger a network-wide update.
+    if line == "pushupdate" then
+      if pushUpdate() then
+        restart = true
+        return
+      end
+    else
+      local ok, out = run(line)
+      setColor(ok and colors.white or colors.red)
+      for _, l in ipairs(out) do print(l) end
+      setColor(colors.white)
+      if line == "help" then print("pushupdate - update remotes, then this hub (console only)") end
+    end
   end
 end
 
@@ -229,3 +271,8 @@ parallel.waitForAny(cliLoop, netLoop, displayLoop)
 
 if rednet.isOpen() then rednet.unhost(PROTOCOL) end
 view.clear()
+
+if restart then
+  print("Hub updated, restarting...")
+  shell.run(shell.getRunningProgram())
+end

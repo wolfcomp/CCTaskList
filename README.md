@@ -80,6 +80,7 @@ alone for a prompt). Person names are single words and case-insensitive.
 | `addperson <name>`        | Add a person with no tasks (shows as Idle)     |
 | `delperson <name>`        | Remove a person and their tasks                |
 | `help`                    | Show the command list                          |
+| `pushupdate`              | Update remotes, then the hub (hub prompt only) |
 | `exit`                    | Stop the hub (hub prompt only)                 |
 
 Example from a pocket computer:
@@ -166,6 +167,26 @@ repository can't be reached, the program still starts on its current version:
 shell.run("update")
 shell.run("hub")   -- or "display"
 ```
+
+### Pushing an update from the hub
+
+After pushing to git, type `pushupdate` at the `hub>` console. The hub:
+
+1. Broadcasts an update notice to everything listening on rednet.
+2. Runs its own updater and, if anything changed, restarts itself on the new
+   version. Tasks are kept, because they're saved in `tasks.dat`.
+
+On receiving the notice (only from the hub they're connected to):
+
+- **Display nodes** run their updater and restart if anything changed.
+- **`tasks` clients with the prompt open** do the same. One-shot `tasks <command>`
+  runs aren't listening, so they pick up changes the next time `update` runs.
+
+Every remote needs `update.lua` installed for this to work. A computer that's off,
+out of range or in an unloaded chunk misses the notice. Running `update` from
+`startup.lua` covers those the next time they boot. `pushupdate` only works at the
+hub console, so a remote client can't trigger a network-wide update. If GitHub's
+cache hasn't caught up with your push yet, wait a few minutes and run it again.
 
 ## Config
 

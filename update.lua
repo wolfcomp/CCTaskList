@@ -1,4 +1,5 @@
 -- Updater: pulls the latest task hub files from a git repository over HTTP.
+-- Returns the number of files changed, so hub/display/tasks can load it and restart on updates.
 -- Usage: update                   update the task files already on this computer
 --        update check             only report what would change
 --        update <hub|display|client>  install that role's files
@@ -207,7 +208,7 @@ end
 
 if #changed == 0 then
   print("Already up to date.")
-  return
+  return 0
 end
 
 for _, file in ipairs(changed) do
@@ -218,8 +219,9 @@ setColor(colors.white)
 
 if cmd == "check" then
   print(#changed .. " file(s) can be updated. Run 'update' to apply.")
-  return
+  return #changed
 end
 
 for _, file in ipairs(changed) do writeLocal(file.path, file.body) end
 print("Updated " .. #changed .. " file(s). Restart running programs (or reboot) to use them.")
+return #changed

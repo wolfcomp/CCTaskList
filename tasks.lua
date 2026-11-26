@@ -5,6 +5,7 @@
 local PROTOCOL = "tasklist"
 local HOSTNAME = "hub"
 local TIMEOUT = 3
+local UPDATE_PROTOCOL = "tasklist_update"
 local PERSON_SETTING = "tasks.person"
 
 -- Commands whose first argument is a person, so a remembered name can stand in for it.
@@ -116,19 +117,66 @@ if #args > 0 then
   return
 end
 
+-- Returns the number of files update.lua changed (0 if it is missing or fails).
+local function runUpdater(...)
+  local path = fs.combine(fs.getDir(shell.getRunningProgram()), "update.lua")
+  if not fs.exists(path) then
+    printError("Hub announced an update, but update.lua is not installed here.")
+    return 0
+  end
+  local fn, err = loadfile(path, nil, _ENV)
+  if not fn then
+    printError(err)
+    return 0
+  end
+  local ok, res = pcall(fn, ...)
+  if not ok then
+    printError(res)
+    return 0
+  end
+  return tonumber(res) or 0
+end
+
 if not findHub() then return end
+local hubId = hub
 print("Connected to task hub #" .. hub .. ". Type 'help', or 'exit' to quit.")
 setPerson()
-local history = {}
-while true do
-  local person = currentPerson()
-  setColor(colors.yellow)
-  write(person and ("tasks (" .. person .. ")> ") or "tasks> ")
-  setColor(colors.white)
-  local line = read(nil, history)
-  if line == "exit" then break end
-  if line:match("%S") then
-    history[#history + 1] = line
-    handle(line)
+
+local function promptLoop()
+  local history = {}
+  while true do
+    local person = currentPerson()
+    setColor(colors.yellow)
+    write(person and ("tasks (" .. person .. ")> ") or "tasks> ")
+    setColor(colors.white)
+    local line = read(nil, history)
+    if line == "exit" then return end
+    if line:match("%S") then
+      history[#history + 1] = line
+      handle(line)
+    end
   end
+end
+
+local restart = false
+local function updateListener()
+  while true do
+    -- hub can be cleared by a timed-out command, so match against the id we connected to.
+    local id, msg = rednet.receive(UPDATE_PROTOCOL)
+    if id == hubId and type(msg) == "table" and msg.update then
+      print()
+      print("Hub announced an update.")
+      if runUpdater() > 0 then
+        restart = true
+        return
+      end
+    end
+  end
+end
+
+parallel.waitForAny(promptLoop, updateListener)
+
+if restart then
+  print("tasks updated, restarting...")
+  shell.run(shell.getRunningProgram())
 end
