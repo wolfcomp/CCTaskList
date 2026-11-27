@@ -234,38 +234,51 @@ function M.run(ctx)
     end
   end
 
-  -- Returns the typed text, or nil when cancelled.
+  -- Full-screen on-screen keyboard. Returns the typed text, or nil when cancelled.
+  -- Layout: row 1 prompt, row 2 the text so far, then the keys, then Shift/Space/Del/Cancel/OK.
   local function touchInput(label)
     local s, shift, result = "", false, nil
-    local wide = w >= 30
     local function add(ch) s = s .. ch end
 
     while result == nil do
+      w, h = scr.getSize()
+      local wide = w >= 30
       hide()
       hits = {}
-      local top = math.max(1, h - #KEY_ROWS - 1)
-      for y = top, h do fill(1, y, w, colors.black) end
+      scr.setBackgroundColor(colors.black)
+      scr.clear()
 
-      local room = w - #label
-      local shown = #s > room and (ARROW_LEFT .. s:sub(-(room - 1))) or s
-      text(1, top, label, colors.yellow, colors.black)
-      text(#label + 1, top, shown, colors.white, colors.black)
+      fill(1, 1, w, colors.blue)
+      text(1, 1, (label:gsub(":%s*$", "") .. " (tap the keys)"):sub(1, w), colors.white, colors.blue)
 
-      local kw = math.max(1, math.min(3, math.floor(w / 10)))
+      local room = w - 1
+      local shown = #s >= room and (ARROW_LEFT .. s:sub(-(room - 2))) or s
+      fill(1, 2, w, colors.white)
+      text(1, 2, shown .. "_", colors.black, colors.white)
+
+      -- Keys grow to fill the screen so they stay easy to hit on large monitors.
+      local kw = math.max(1, math.floor(w / 10))
+      local kh = math.max(1, math.min(3, math.floor((h - 4) / #KEY_ROWS)))
+      local gap = kw >= 3 and 1 or 0
       local x = math.floor((w - kw * 10) / 2) + 1
       for r, row in ipairs(KEY_ROWS) do
-        local y = top + r
-        if y >= h then break end
+        local y0 = 3 + (r - 1) * kh
+        if y0 + kh - 1 >= h then break end
         for i = 1, #row do
           local ch = row:sub(i, i)
           if shift then ch = ch:upper() end
           local x0 = x + (i - 1) * kw
-          -- Alternating shades keep single-column keys distinguishable.
-          local light = (i + r) % 2 == 0
-          button(x0, x0 + kw - 1, y, ch, function()
+          local x1 = x0 + kw - 1 - gap
+          -- Alternating shades keep gapless single-column keys distinguishable.
+          local light = gap == 1 or (i + r) % 2 == 0
+          local bg, fg = light and colors.lightGray or colors.gray, light and colors.black or colors.white
+          local function press()
             add(ch)
             shift = false
-          end, light and colors.lightGray or colors.gray, light and colors.black or colors.white)
+          end
+          for y = y0, y0 + kh - 1 do
+            button(x0, x1, y, y == y0 + math.floor((kh - 1) / 2) and ch or "", press, bg, fg)
+          end
         end
       end
 
@@ -283,8 +296,6 @@ function M.run(ctx)
         quit, result = true, false
       elseif ev == "mouse_click" then
         click(b, c)
-      elseif ev == "term_resize" then
-        w, h = scr.getSize()
       end
     end
     return result or nil

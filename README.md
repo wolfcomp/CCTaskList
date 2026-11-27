@@ -70,9 +70,15 @@ person's column (or anywhere on an empty board) and the monitor switches to the 
 UI for that person, with Add, Done, Top, Skip, Clear and the People screen. There's
 no **Me** button, because a shared monitor doesn't belong to anyone.
 
-- Monitors have no keyboard, so **Add** and **New** bring up an on-screen keyboard:
-  letters, digits and `- , . '`, plus Shift, Space, Del (`_` and `<` on narrow
-  monitors), Cancel (`x`) and **OK**. Shift applies to the next letter only.
+- Monitors have no keyboard, so every button that needs text (**Add**, **New** and
+  the header's **+**) switches the monitor to a full-screen on-screen keyboard. The
+  top row says what's being asked for, the white row below shows what you've typed,
+  and the keys (digits, letters and `- , . '`) grow to fill the monitor. The bottom
+  row has Shift, Space, Del, Cancel and **OK**, shown as `↑ _ < x OK` on monitors
+  narrower than 30 characters. Shift applies to the next letter only, and **OK** with
+  nothing typed cancels.
+- If the monitor UI ever hits an error, the monitor shows it for 8 seconds before
+  going back to the board.
 - `x` in the header goes back to the board, and so does 60 seconds without a tap
   (`MONITOR_IDLE_SECONDS`).
 - Only taps on that monitor count, so someone using the computer's own screen at

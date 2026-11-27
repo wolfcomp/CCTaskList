@@ -235,6 +235,19 @@ function M.new(opts)
           -- A peripheral detaching mid-edit throws; the board just redraws after it.
           local ok, err = pcall(manage, win, a, t.person)
           if not ok and err == "Terminated" then error(err, 0) end
+          if not ok then
+            -- Shown rather than swallowed, so a broken UI isn't mistaken for a missing feature.
+            -- Guarded too, because the monitor may be the thing that went away.
+            pcall(function()
+              local w = win.getSize()
+              win.setBackgroundColor(colors.black)
+              win.clear()
+              put(1, 1, "Monitor UI error:", colors.red, colors.black)
+              for i, l in ipairs(wrap(tostring(err), w)) do put(1, i + 1, l, colors.white, colors.black) end
+              win.setVisible(true)
+            end)
+            sleep(8)
+          end
           self.attach()
           timer = os.startTimer(pageSeconds)
         else
