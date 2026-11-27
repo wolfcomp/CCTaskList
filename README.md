@@ -24,8 +24,8 @@ block column is one person: their current task at the top, the queue below it.
 | `display.lua`  | Each display node               | Mirrors the hub's board on its own monitor      |
 | `taskview.lua` | Hub and every display node      | Shared monitor drawing code (required by both)  |
 | `tasks.lua`    | Any computer / pocket computer  | Remote control of the hub over rednet           |
-| `pager.lua`    | Hub and every `tasks` client    | Wraps and pages long replies to fit the screen  |
-| `taskgui.lua`  | Every `tasks` client            | Clickable task UI for advanced/pocket computers |
+| `pager.lua`    | Hub, display nodes and clients  | Wraps and pages long replies to fit the screen  |
+| `taskgui.lua`  | Hub, display nodes and clients  | Clickable task UI for advanced/pocket computers |
 | `update.lua`   | Optional, on any of the above   | Pulls the latest files from a git repository    |
 
 ## Setup
@@ -34,7 +34,7 @@ block column is one person: their current task at the top, the queue below it.
    1 wide and 2 tall (touching the computer or via wired modems).
 2. Attach a **Wireless** or **Ender Modem** to the hub if people should manage
    tasks remotely or you want display nodes.
-3. Copy `hub.lua`, `taskview.lua` and `pager.lua` into the same folder on the hub. Either paste
+3. Copy `hub.lua`, `taskview.lua`, `pager.lua` and `taskgui.lua` into the same folder on the hub. Either paste
    them with `edit`, or drop the files into
    `saves/<world>/computercraft/computer/<id>/`.
 4. To start it on boot, create `startup.lua` on the hub containing
@@ -47,6 +47,21 @@ block column is one person: their current task at the top, the queue below it.
 Running `tasks` with no arguments on an **advanced** computer or **advanced pocket
 computer** opens a clickable UI. Basic computers have no mouse, so they get the text
 prompt instead. `tasks cli` forces the prompt and `tasks gui` forces the UI.
+
+The hub and display nodes show the same UI on their own terminal (the computer's
+screen, not the monitor) when they're advanced computers:
+
+- **Hub:** the UI edits tasks directly. `x` drops to the `hub>` prompt instead of
+  stopping the hub, and typing `gui` there opens the UI again. The People screen has
+  an extra **Update** button that runs `pushupdate` after a Yes/No check. Start with
+  `hub cli` to begin at the prompt.
+- **Display node:** the UI sends commands to the hub like a client does, while the
+  monitor keeps showing the board. `x` shows the node's status text, and pressing
+  `G` brings the UI back. Start with `display cli` to leave the terminal as status
+  text only.
+
+Everyone shares the `tasks.person` setting for **Me**, so each computer can
+remember its own person.
 
 ```
 +--------------------------+
@@ -104,7 +119,8 @@ A display node is a computer with a monitor and a modem that shows the same boar
 as the hub, anywhere in modem range (or anywhere at all with ender modems).
 
 1. Place a computer, an Advanced Monitor (any size, at least 1x2) and a modem.
-2. Copy `display.lua` and `taskview.lua` into the same folder on it.
+2. Copy `display.lua`, `taskview.lua`, `pager.lua` and `taskgui.lua` into the same
+   folder on it (or use `update display`).
 3. Add `shell.run("display")` to its `startup.lua`.
 
 The hub pushes the board to every node the moment anything changes. Nodes also
@@ -140,6 +156,7 @@ alone for a prompt). Person names are single words and case-insensitive.
 | `delperson <name>`        | Remove a person and their tasks                |
 | `help`                    | Show the command list                          |
 | `pushupdate`              | Update remotes, then the hub (hub prompt only) |
+| `gui`                     | Open the clickable UI (hub prompt only)        |
 | `exit`                    | Stop the hub (hub prompt only)                 |
 
 Example from a pocket computer:
@@ -215,7 +232,8 @@ After that:
 - Saved data (`tasks.dat`, `.settings`) is never touched.
 - If a task program was installed *as* `startup.lua` (or `startup`), the updater
   recognises it by its first line (`-- Task hub:`, `-- Display node:`, ...) and
-  updates it too, along with the files it needs next to it (`taskview.lua`, `pager.lua`). A
+  updates it too, along with the files it needs next to it (`taskview.lua`, `pager.lua`,
+  `taskgui.lua`). A
   wrapper startup like `shell.run("hub")` isn't a copy, so it is left alone.
   To override detection: `set tasks.startup_file hub.lua`, or
   `set tasks.startup_file none` to never touch startup.

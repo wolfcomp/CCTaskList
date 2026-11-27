@@ -20,8 +20,8 @@ local ROLES = {
 }
 local KNOWN = { "hub.lua", "display.lua", "taskview.lua", "pager.lua", "taskgui.lua", "tasks.lua", "update.lua" }
 local DEPENDS = {
-  ["hub.lua"] = { "taskview.lua", "pager.lua" },
-  ["display.lua"] = { "taskview.lua" },
+  ["hub.lua"] = { "taskview.lua", "pager.lua", "taskgui.lua" },
+  ["display.lua"] = { "taskview.lua", "pager.lua", "taskgui.lua" },
   ["tasks.lua"] = { "pager.lua", "taskgui.lua" },
 }
 -- A program copied to startup.lua is recognised by its first line, so these headers must

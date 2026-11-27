@@ -1,7 +1,12 @@
 -- Task hub: stores everyone's tasks, serves them over rednet and shows them on a monitor.
+-- Usage: hub        (clickable UI on an advanced computer, hub> prompt otherwise)
+--        hub cli    (start at the hub> prompt)
 
 local taskview = require("taskview")
 local pager = require("pager")
+local taskgui = require("taskgui")
+
+local args = { ... }
 
 local PROTOCOL = "tasklist"
 -- Kept separate from PROTOCOL so state pushes never get mistaken for a command reply.
@@ -230,11 +235,12 @@ local function pushUpdate()
   end
   local changed
   if ref then changed = runUpdater("--ref", ref) else changed = runUpdater() end
-  return (tonumber(changed) or 0) > 0
+  return (tonumber(changed) or 0) > 0, rednet.isOpen()
 end
 
-local restart = false
+local canGui = term.isColour()
 
+-- Returns "exit", "gui" or "restart".
 local function cliLoop()
   local history = {}
   while true do
@@ -243,19 +249,18 @@ local function cliLoop()
     setColor(colors.white)
     local line = read(nil, history)
     if line:match("%S") then history[#history + 1] = line end
-    if line == "exit" then return end
+    if line == "exit" then return "exit" end
+    if line == "gui" and canGui then return "gui" end
     -- Kept off the rednet command set so a remote client can't trigger a network-wide update.
     if line == "pushupdate" then
-      if pushUpdate() then
-        restart = true
-        return
-      end
+      if pushUpdate() then return "restart" end
     else
       local ok, out = run(line)
       if line == "help" then
-        -- Copied so the shared help list sent to remote clients doesn't gain the console-only entry.
+        -- Copied so the shared help list sent to remote clients doesn't gain the console-only entries.
         local lines = { table.unpack(out) }
         lines[#lines + 1] = "pushupdate - update remotes, then this hub (console only)"
+        if canGui then lines[#lines + 1] = "gui - open the clickable UI (console only)" end
         pager.help(lines)
       else
         pager.lines(out, ok and colors.white or colors.red)
@@ -264,26 +269,82 @@ local function cliLoop()
   end
 end
 
-loadData()
-openModems()
-term.clear()
-term.setCursorPos(1, 1)
-print("Task hub running. Type 'help' for commands, 'exit' to stop.")
-if rednet.isOpen() then
-  print(("Hosting '%s' as '%s' (id %d)"):format(PROTOCOL, HOSTNAME, os.getComputerID()))
-else
-  printError("No modem attached: clients and display nodes can't connect.")
-end
-if not view.findMonitor() then
-  printError("No monitor attached: nothing will be displayed here.")
+local function warnings()
+  local out = {}
+  if not rednet.isOpen() then out[#out + 1] = "No modem attached: clients and display nodes can't connect." end
+  if not view.findMonitor() then out[#out + 1] = "No monitor attached: nothing will be displayed here." end
+  return out
 end
 
-parallel.waitForAny(cliLoop, netLoop, displayLoop)
+local function banner()
+  term.setBackgroundColor(colors.black)
+  term.clear()
+  term.setCursorPos(1, 1)
+  print("Task hub running. Type 'help' for commands, 'exit' to stop.")
+  if canGui then print("Type 'gui' for the clickable UI.") end
+  if rednet.isOpen() then
+    print(("Hosting '%s' as '%s' (id %d)"):format(PROTOCOL, HOSTNAME, os.getComputerID()))
+  end
+  for _, w in ipairs(warnings()) do printError(w) end
+end
+
+-- Returns "restart" if an update from the UI needs the hub to restart.
+local function guiLoop()
+  local result
+  local warn = warnings()[1]
+  taskgui.run({
+    -- Commands only ever change people in place, so this table stays current.
+    state = { people = people },
+    send = run,
+    requestState = function() os.queueEvent("task_state") end,
+    status = warn,
+    statusColor = warn and colors.red,
+    extras = { {
+      label = "Update",
+      confirm = "Update every computer from git?",
+      action = function()
+        local changed, told = pushUpdate()
+        if changed then
+          result = "restart"
+          return true
+        end
+        return false, told and "Remotes told, hub up to date" or "No modem, hub up to date"
+      end,
+    } },
+  })
+  return result
+end
+
+local restart = false
+
+local function consoleLoop()
+  local useGui = canGui and (args[1] or ""):lower() ~= "cli"
+  if not useGui then banner() end
+  while true do
+    local result
+    if useGui then
+      result = guiLoop()
+      if result ~= "restart" then banner() end
+    end
+    if result ~= "restart" then result = cliLoop() end
+    if result == "restart" then
+      restart = true
+      return
+    end
+    if result == "exit" then return end
+    useGui = true
+  end
+end
+
+loadData()
+openModems()
+
+parallel.waitForAny(consoleLoop, netLoop, displayLoop)
 
 if rednet.isOpen() then rednet.unhost(PROTOCOL) end
 view.clear()
 
 if restart then
   print("Hub updated, restarting...")
-  shell.run(shell.getRunningProgram())
+  shell.run(shell.getRunningProgram(), table.unpack(args))
 end

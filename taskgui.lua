@@ -1,4 +1,5 @@
--- Task GUI: clickable front end for the tasks client on advanced computers and pocket computers.
+-- Task GUI: clickable front end for the hub, display nodes and the tasks client on advanced
+-- computers and pocket computers.
 --
 -- Layout (26x20 pocket shown, scales to any size):
 --   row 1        header: < person > x      (tap the name to manage people)
@@ -14,14 +15,40 @@ local POLL_SECONDS = 30
 -- CC's font has CP437 glyphs at these codes.
 local ARROW_LEFT, ARROW_RIGHT, ARROW_UP, ARROW_DOWN = "\17", "\16", "\30", "\31"
 
+-- Shared with tasks.lua, so the hub, display nodes and clients all remember "me" the same way.
+local PERSON_SETTING = "tasks.person"
+
+settings.define(PERSON_SETTING, {
+  description = "Person the tasks client acts as when no name is given",
+  type = "string",
+})
+
+local function defaultMe()
+  local name = settings.get(PERSON_SETTING)
+  if name and name ~= "" then return name end
+end
+
+local function defaultRemember(name)
+  if name then
+    settings.set(PERSON_SETTING, name)
+  else
+    settings.unset(PERSON_SETTING)
+  end
+  settings.save()
+end
+
 -- ctx: state = { people = ... } (kept current by the caller), send(line) -> ok, out | nil, err,
---      requestState(), me() -> name|nil, remember(name|nil)
+--      requestState(), me() -> name|nil, remember(name|nil) (both default to the
+--      tasks.person setting), status, statusColor (optional first status line), extras ={ { label, action, confirm }, ... } (optional buttons
+--      on the People screen; action() runs on a cleared screen and returns quit, status)
 function M.run(ctx)
+  ctx.me = ctx.me or defaultMe
+  ctx.remember = ctx.remember or defaultRemember
   local w, h = term.getSize()
   local mode = "main" -- or "people"
   local selPerson, selTask
   local scroll = { main = 0, people = 0 }
-  local status, statusColor = "Tap a task to select it", colors.lightGray
+  local status, statusColor = ctx.status or "Tap a task to select it", ctx.statusColor or colors.lightGray
   local confirm -- { question = "...", action = function }
   local hits = {}
   local quit = false
@@ -295,7 +322,7 @@ function M.run(ctx)
     if #rows == 0 then rows = messageRows("Nobody here yet. Tap New.") end
     drawList(rows, 2, h - 2, "people")
 
-    buttonRow(h - 1, {
+    local defs = {
       { "New", function()
         local s = input("Name: ")
         if not s then return end
@@ -311,7 +338,22 @@ function M.run(ctx)
         askConfirm("Remove " .. name .. " and all their tasks?", function() run("delperson " .. name) end)
       end, colors.red, colors.white },
       { "Open", current and function() mode, scroll.main = "main", 0 end },
-    })
+    }
+    for _, extra in ipairs(ctx.extras or {}) do
+      local function go()
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.white)
+        term.clear()
+        term.setCursorPos(1, 1)
+        local done, msg = extra.action()
+        if done then quit = true end
+        if msg then setStatus(msg) end
+      end
+      defs[#defs + 1] = { extra.label, function()
+        if extra.confirm then askConfirm(extra.confirm, go) else go() end
+      end, colors.cyan, colors.black }
+    end
+    buttonRow(h - 1, defs)
   end
 
   local function drawConfirm()
@@ -364,9 +406,10 @@ function M.run(ctx)
 
   -- Event loop ----------------------------------------------------------------
 
+  -- Drawn first because a display node's request may block on a hub lookup.
+  redraw()
   ctx.requestState()
   local poll = os.startTimer(POLL_SECONDS)
-  redraw()
   while not quit do
     local ev, a, b, c = os.pullEvent()
     local dirty = true
@@ -380,7 +423,8 @@ function M.run(ctx)
       ctx.requestState()
       poll = os.startTimer(POLL_SECONDS)
       dirty = false
-    elseif ev ~= "task_state" and ev ~= "term_resize" then
+    -- tasks_changed comes from the hub's own saves and from display nodes receiving a push.
+    elseif ev ~= "task_state" and ev ~= "tasks_changed" and ev ~= "term_resize" then
       dirty = false
     end
     if dirty and not quit then redraw() end
