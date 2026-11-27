@@ -84,7 +84,7 @@ no **Me** button, because a shared monitor doesn't belong to anyone.
 
 ```
 +--------------------------+
-|<<      Alex (me)     >> x|  tap < > to switch person, the name for People
+|<<    Alex (me)    >> + x|  tap < > to switch person, the name for People, + to add one
 |1 Fix the reactor         |  yellow 1 = current task
 |2 Sort chests             |  tap a task to select it (highlighted)
 |3 Craft pipes for the    ^|  scroll bar appears when the list is long
@@ -104,12 +104,14 @@ no **Me** button, because a shared monitor doesn't belong to anyone.
 | Skip     | Send the current task to the back                              |
 | Clear    | Remove all of this person's tasks (asks Yes/No first)          |
 | Me / Not me | Remember (or forget) this person as you, like `tasks as`    |
+| + (green, header) | Add a person (one-word name) and switch to them       |
 | x        | Close the UI                                                   |
 
 The **People** screen (tap the name in the header) lists everyone with their task
 count. Tap a person to select them and tap again (or **Open**) to view their tasks.
-**New** adds a person (one-word name), and **Remove** deletes the selected person
-after a Yes/No check.
+**New** (or the header's **+**) adds a person (one-word name), and **Remove** deletes
+the selected person after a Yes/No check. When nobody exists yet, tapping the
+"Nobody here yet" message adds someone too.
 
 The UI updates live: the hub pushes every change, so other people's edits show up
 straight away, and it re-syncs every 30 seconds in case a push was missed. Update

@@ -2,7 +2,7 @@
 -- computers and pocket computers, and on touch monitors.
 --
 -- Layout (26x20 pocket shown, scales to any size):
---   row 1        header: < person > x      (tap the name to manage people)
+--   row 1        header: < person > + x    (tap the name to manage people, + adds one)
 --   rows 2..h-3  task list                 (tap a task to select it, scroll if long)
 --   rows h-2,h-1 action buttons             (row h-3 too when the caller adds extras)
 --   row h        status line, also the typing line for text input
@@ -315,6 +315,17 @@ function M.run(ctx)
     confirm = { question = question, action = action }
   end
 
+  local function newPerson()
+    local s = input("Name: ")
+    if not s then return end
+    if not s:match("^%S+$") then
+      setStatus("Names must be one word", colors.red)
+      return
+    end
+    run("addperson " .. s)
+    selPerson, selTask, mode, scroll.main = s, nil, "main", 0
+  end
+
   local function cycle(d)
     local list = people()
     local _, i = findPerson(selPerson)
@@ -350,13 +361,18 @@ function M.run(ctx)
     local isMe = p and same(p.name, me)
 
     fill(1, 1, w, colors.blue)
-    if #people() > 1 then
-      button(1, 3, 1, ARROW_LEFT, function() cycle(-1) end, colors.blue, colors.white)
-      button(w - 5, w - 3, 1, ARROW_RIGHT, function() cycle(1) end, colors.blue, colors.white)
-    end
+    -- Narrow monitors (15 columns) need one-column arrows to leave room for the name.
+    local aw = w >= 20 and 3 or 1
     button(w - 2, w, 1, "x", function() quit = true end, colors.red, colors.white)
+    button(w - 5, w - 3, 1, "+", newPerson, colors.green, colors.white)
+    local nameL, nameR = 1, w - 6
+    if #people() > 1 then
+      button(1, aw, 1, ARROW_LEFT, function() cycle(-1) end, colors.blue, colors.white)
+      button(w - 5 - aw, w - 6, 1, ARROW_RIGHT, function() cycle(1) end, colors.blue, colors.white)
+      nameL, nameR = aw + 1, w - 6 - aw
+    end
     local name = p and (p.name .. (isMe and " (me)" or "")) or "People"
-    button(4, w - 6, 1, name, function()
+    button(nameL, nameR, 1, name, function()
       mode = "people"
       setStatus("Tap to pick, again to open")
     end, colors.blue, colors.white)
@@ -365,7 +381,8 @@ function M.run(ctx)
     if ctx.state.people == nil then
       rows = messageRows("Waiting for the hub...")
     elseif not p then
-      rows = messageRows("Nobody here yet. Tap People to add someone.")
+      rows = messageRows("Nobody here yet. Tap + or here to add someone.")
+      for _, r in ipairs(rows) do r.action = newPerson end
     elseif #p.tasks == 0 then
       rows = messageRows(p.name .. " is idle. Tap Add for a new task.")
     else
@@ -436,8 +453,9 @@ function M.run(ctx)
   local function drawPeople()
     fill(1, 1, w, colors.blue)
     local title = "People"
-    text(math.floor((w - #title) / 2) + 1, 1, title, colors.white, colors.blue)
+    text(math.max(1, math.floor((w - 6 - #title) / 2) + 1), 1, title, colors.white, colors.blue)
     button(w - 2, w, 1, "x", function() quit = true end, colors.red, colors.white)
+    button(w - 5, w - 3, 1, "+", newPerson, colors.green, colors.white)
 
     local me = ctx.me()
     local current = selected()
@@ -460,20 +478,14 @@ function M.run(ctx)
         end,
       }
     end
-    if #rows == 0 then rows = messageRows("Nobody here yet. Tap New.") end
+    if #rows == 0 then
+      rows = messageRows("Nobody here yet. Tap New or here to add someone.")
+      for _, r in ipairs(rows) do r.action = newPerson end
+    end
     drawList(rows, 2, h - 2, "people")
 
     buttonRow(h - 1, {
-      { "New", function()
-        local s = input("Name: ")
-        if not s then return end
-        if not s:match("^%S+$") then
-          setStatus("Names must be one word", colors.red)
-          return
-        end
-        run("addperson " .. s)
-        selPerson, selTask = s, nil
-      end, colors.green, colors.white },
+      { "New", newPerson, colors.green, colors.white },
       { "Remove", current and function()
         local name = current.name
         askConfirm("Remove " .. name .. " and all their tasks?", function() run("delperson " .. name) end)
