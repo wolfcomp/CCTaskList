@@ -263,6 +263,7 @@ After that:
 | `update check`   | List new or changed files without writing anything        |
 | `update <role>`  | Install `hub`, `display` or `client` files (plus updater) |
 | `update url`     | Show the repository and branch in use                     |
+| `update version` | Show the commit this computer was last updated to         |
 
 - You can paste the repository page URL: GitHub, GitLab, Codeberg/Gitea/Forgejo
   links (including `/tree/<branch>/<folder>` style links) are converted to raw-file
@@ -300,6 +301,29 @@ repository can't be reached, the program still starts on its current version:
 shell.run("update")
 shell.run("hub")   -- or "display"
 ```
+
+### Catching up with the hub's version
+
+Every successful update from GitHub records the commit it installed in the
+`tasks.version` setting (`update version` shows it). The hub sends its version with
+every board it sends out: on each change, in reply to every poll, and once each time
+it starts (the version is also shown in the hub's console banner).
+
+When a display node or an open `tasks` client sees a hub version different from its
+own, it runs `update --ref <hub's commit>` and restarts if anything changed. So a
+computer that was off, out of range or in an unloaded chunk during `pushupdate`
+catches up as soon as it next hears from the hub, without anyone running `update`
+by hand.
+
+- Remotes match the hub exactly, so a remote that was updated past the hub moves back
+  to the hub's commit. Update the hub (or use **Update all**) to move everyone forward.
+- A catch-up to a given hub version is tried once per run. If it fails (no
+  `update.lua`, GitHub unreachable), the remote keeps working on its current files
+  and tries again after its next restart or the hub's next version.
+- Versions are only known for GitHub repositories, where the updater pins a commit.
+  On other hosts, or before the hub's first update with this updater, the hub has no
+  version and nothing is caught up automatically.
+- One-shot `tasks <command>` runs don't catch up; the prompt and the clickable UI do.
 
 ### Pushing an update from the hub
 

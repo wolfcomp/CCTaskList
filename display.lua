@@ -41,7 +41,7 @@ end
 local function runUpdater(...)
   local path = fs.combine(fs.getDir(shell.getRunningProgram()), "update.lua")
   if not fs.exists(path) then
-    printError("Hub announced an update, but update.lua is not installed here.")
+    printError("The hub wants this computer updated, but update.lua is not installed here.")
     return 0
   end
   local fn, err = loadfile(path, nil, _ENV)
@@ -78,6 +78,30 @@ local function send(line)
   end
 end
 
+-- Remembers the last hub version tried, so a catch-up that fails (or that the repository
+-- can't satisfy) is attempted once rather than on every board the hub sends.
+local triedVersion
+
+local function needsCatchUp(version)
+  return type(version) == "string" and #version == 40 and version:match("^%x+$") ~= nil
+    and version ~= settings.get("tasks.version") and version ~= triedVersion
+end
+
+-- Returns true if files changed and the node should restart.
+local function applyUpdate(message, ref)
+  if guiOpen then
+    term.setBackgroundColor(colors.black)
+    term.clear()
+    term.setCursorPos(1, 1)
+  end
+  print(message)
+  local changed = type(ref) == "string" and runUpdater("--ref", ref) or runUpdater()
+  if changed > 0 then return true end
+  -- Nothing changed: have the UI repaint over the updater's output.
+  os.queueEvent("task_state")
+  return false
+end
+
 local function netLoop()
   local awaiting = false
   local timer = os.startTimer(0)
@@ -102,18 +126,13 @@ local function netLoop()
       guiState.people = b.people
       online, everSeen, awaiting = true, true, false
       os.queueEvent("tasks_changed")
+      if needsCatchUp(b.version) then
+        triedVersion = b.version
+        if applyUpdate("Hub is on " .. b.version:sub(1, 7) .. ", catching up.", b.version) then return true end
+      end
     elseif ev == "rednet_message" and c == UPDATE_PROTOCOL and hub and a == hub
         and type(b) == "table" and b.update then
-      if guiOpen then
-        term.setBackgroundColor(colors.black)
-        term.clear()
-        term.setCursorPos(1, 1)
-      end
-      print("Hub announced an update.")
-      local changed = type(b.ref) == "string" and runUpdater("--ref", b.ref) or runUpdater()
-      if changed > 0 then return true end
-      -- Nothing changed: have the UI repaint over the updater's output.
-      os.queueEvent("task_state")
+      if applyUpdate("Hub announced an update.", b.ref) then return true end
     end
   end
 end

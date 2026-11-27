@@ -5,11 +5,14 @@
 --        update <hub|display|client>  install that role's files
 --        update url <url> [branch]    set the repository to pull from
 --        update ref               print (and return) the latest commit hash on GitHub
+--        update version           print (and return) the commit this computer was updated to
 -- Any form takes --ref <commit|branch|tag> to pull that exact version instead of the branch tip.
 
 local URL_SETTING = "tasks.update_url"
 local BRANCH_SETTING = "tasks.update_branch"
 local STARTUP_SETTING = "tasks.startup_file"
+-- The hub announces this, and remotes compare it with their own to know when to catch up.
+local VERSION_SETTING = "tasks.version"
 local DEFAULT_URL = "https://github.com/wolfcomp/CCTaskList"
 local DEFAULT_BRANCH = "master"
 
@@ -37,6 +40,10 @@ settings.define(URL_SETTING, { description = "Git repository the task updater pu
 settings.define(BRANCH_SETTING, { description = "Branch the task updater pulls from", type = "string" })
 settings.define(STARTUP_SETTING, {
   description = "Task file startup.lua is a copy of (e.g. hub.lua), 'none' to never touch it; unset to auto-detect",
+  type = "string",
+})
+settings.define(VERSION_SETTING, {
+  description = "Commit the task files were last updated to (set by the updater)",
   type = "string",
 })
 
@@ -195,9 +202,15 @@ if cmd == "url" then
   return
 end
 
+if cmd == "version" then
+  local v = settings.get(VERSION_SETTING)
+  print(v and ("Installed commit: " .. v) or "Installed commit unknown (not updated from GitHub yet)")
+  return v
+end
+
 if cmd ~= nil and cmd ~= "check" and cmd ~= "ref" and not ROLES[cmd] then
   printError("Unknown option: " .. args[1])
-  print("Usage: update [check | ref | hub | display | client | url <url> [branch]] [--ref <ref>]")
+  print("Usage: update [check | ref | version | hub | display | client | url <url> [branch]] [--ref <ref>]")
   return
 end
 
@@ -335,8 +348,17 @@ if failures > 0 then
   return
 end
 
+-- Only a commit pins exact file contents; a branch or tag name could mean anything later.
+local function recordVersion()
+  if isCommit(useRef) then
+    settings.set(VERSION_SETTING, useRef)
+    settings.save()
+  end
+end
+
 if #changed == 0 then
   print("Already up to date.")
+  if cmd ~= "check" then recordVersion() end
   return 0
 end
 
@@ -352,5 +374,6 @@ if cmd == "check" then
 end
 
 for _, file in ipairs(changed) do writeLocal(file.path, file.body) end
+recordVersion()
 print("Updated " .. #changed .. " file(s). Restart running programs (or reboot) to use them.")
 return #changed

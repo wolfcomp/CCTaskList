@@ -140,7 +140,7 @@ local useGui = mode == "gui" or (mode == nil and term.isColour())
 local function runUpdater(...)
   local path = fs.combine(fs.getDir(shell.getRunningProgram()), "update.lua")
   if not fs.exists(path) then
-    printError("Hub announced an update, but update.lua is not installed here.")
+    printError("The hub wants this computer updated, but update.lua is not installed here.")
     return 0
   end
   local fn, err = loadfile(path, nil, _ENV)
@@ -162,12 +162,32 @@ if not hubId then
   return
 end
 
+-- Remembers the last hub version tried, so a catch-up that fails (or that the repository
+-- can't satisfy) is attempted once rather than on every board the hub sends.
+local triedVersion
+
+local function needsCatchUp(version)
+  return type(version) == "string" and #version == 40 and version:match("^%x+$") ~= nil
+    and version ~= settings.get("tasks.version") and version ~= triedVersion
+end
+
 local restart = false
+-- Update notices and version catch-ups are both handled here, in one coroutine, so two
+-- updater runs can never overlap.
 local function updateListener()
   while true do
+    local _, id, msg, protocol = os.pullEvent("rednet_message")
     -- hub can be cleared by a timed-out command, so match against the id we connected to.
-    local id, msg = rednet.receive(UPDATE_PROTOCOL)
-    if id == hubId and type(msg) == "table" and msg.update then
+    local message, ref
+    if id == hubId and type(msg) == "table" then
+      if protocol == UPDATE_PROTOCOL and msg.update then
+        message, ref = "Hub announced an update.", msg.ref
+      elseif protocol == STATE_PROTOCOL and needsCatchUp(msg.version) then
+        triedVersion = msg.version
+        message, ref = "Hub is on " .. msg.version:sub(1, 7) .. ", catching up.", msg.version
+      end
+    end
+    if message then
       if useGui then
         term.setBackgroundColor(colors.black)
         term.clear()
@@ -175,8 +195,8 @@ local function updateListener()
       else
         print()
       end
-      print("Hub announced an update.")
-      local changed = type(msg.ref) == "string" and runUpdater("--ref", msg.ref) or runUpdater()
+      print(message)
+      local changed = type(ref) == "string" and runUpdater("--ref", ref) or runUpdater()
       if changed > 0 then
         restart = true
         return
@@ -217,6 +237,8 @@ if useGui then
 else
   print("Connected to task hub #" .. hubId .. ". Type 'help', or 'exit' to quit.")
   setPerson()
+  -- The prompt never shows the board, but the reply carries the hub's version to catch up to.
+  rednet.send(hubId, { get = true }, PROTOCOL)
 
   local function promptLoop()
     local history = {}

@@ -32,12 +32,18 @@ local function loadData()
   if type(data) == "table" then people = data end
 end
 
+-- Every board carries the hub's installed commit, so a remote that missed an update notice
+-- (off, out of range, unloaded) notices the mismatch on its next board and catches up.
+local function statePacket()
+  return { people = people, version = settings.get("tasks.version") }
+end
+
 local function saveData()
   local f = fs.open(DATA_FILE, "w")
   f.write(textutils.serialize(people))
   f.close()
   os.queueEvent("tasks_changed")
-  if rednet.isOpen() then rednet.broadcast({ people = people }, STATE_PROTOCOL) end
+  if rednet.isOpen() then rednet.broadcast(statePacket(), STATE_PROTOCOL) end
 end
 
 local function findPerson(name)
@@ -209,7 +215,7 @@ local function netLoop()
   while true do
     local id, msg = rednet.receive(PROTOCOL)
     if type(msg) == "table" and msg.get then
-      rednet.send(id, { people = people }, STATE_PROTOCOL)
+      rednet.send(id, statePacket(), STATE_PROTOCOL)
     else
       local line = type(msg) == "table" and msg.line or msg
       if type(line) == "string" then
@@ -337,6 +343,8 @@ local function banner()
   if rednet.isOpen() then
     print(("Hosting '%s' as '%s' (id %d)"):format(PROTOCOL, HOSTNAME, os.getComputerID()))
   end
+  local version = settings.get("tasks.version")
+  print("Version: " .. (version and version:sub(1, 7) or "unknown (run update once)"))
   for _, w in ipairs(warnings()) do printError(w) end
 end
 
@@ -403,6 +411,8 @@ loadData()
 openModems()
 pushOk, pushMsg = sendPendingPush()
 if pushMsg and pushOk then pushMsg = "Hub restarted. " .. pushMsg end
+-- Announced on every start, so remotes that are already up catch up without waiting for a change.
+if rednet.isOpen() then rednet.broadcast(statePacket(), STATE_PROTOCOL) end
 
 parallel.waitForAny(consoleLoop, netLoop, displayLoop)
 
