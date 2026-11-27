@@ -52,9 +52,9 @@ The hub and display nodes show the same UI on their own terminal (the computer's
 screen, not the monitor) when they're advanced computers:
 
 - **Hub:** the UI edits tasks directly. `x` drops to the `hub>` prompt instead of
-  stopping the hub, and typing `gui` there opens the UI again. The People screen has
-  an extra **Update** button that runs `pushupdate` after a Yes/No check. Start with
-  `hub cli` to begin at the prompt.
+  stopping the hub, and typing `gui` there opens the UI again. The main screen has
+  an extra **Update all** row above the other buttons that runs `pushupdate` after a
+  Yes/No check. Start with `hub cli` to begin at the prompt.
 - **Display node:** the UI sends commands to the hub like a client does, while the
   monitor keeps showing the board. `x` shows the node's status text, and pressing
   `G` brings the UI back. Start with `display cli` to leave the terminal as status
@@ -134,7 +134,12 @@ size, so a small node can page through people while a wide one shows them all.
 - One person per monitor block column. A 1-wide monitor shows one person at a time;
   a 3-wide monitor shows three side by side.
 - If there are more people than columns, pages rotate every 8 seconds (tap the
-  monitor to flip early) and a `Page x/y` line appears at the bottom.
+  monitor to flip early). A row of person buttons appears along the bottom, one per
+  person in their column colour, with the people on screen lit up. Tap a name to
+  jump to that person; their page stays up for 30 seconds before rotation carries
+  on. Names wrap onto extra rows if needed (up to a quarter of the monitor height).
+  If they still don't fit, or the monitor is a basic one that can't be touched, a
+  `Page x/y` line is shown instead.
 - Long tasks word-wrap. If a queue doesn't fit, the last line shows `+N more`.
 - Data is saved to `tasks.dat` on the hub after every change, so it survives
   restarts and chunk unloads.
@@ -155,7 +160,7 @@ alone for a prompt). Person names are single words and case-insensitive.
 | `addperson <name>`        | Add a person with no tasks (shows as Idle)     |
 | `delperson <name>`        | Remove a person and their tasks                |
 | `help`                    | Show the command list                          |
-| `pushupdate`              | Update remotes, then the hub (hub prompt only) |
+| `pushupdate`              | Update the hub, then remotes (hub prompt only) |
 | `gui`                     | Open the clickable UI (hub prompt only)        |
 | `exit`                    | Stop the hub (hub prompt only)                 |
 
@@ -259,13 +264,22 @@ shell.run("hub")   -- or "display"
 
 ### Pushing an update from the hub
 
-After pushing to git, type `pushupdate` at the `hub>` console. The hub:
+After pushing to git, type `pushupdate` at the `hub>` console, or tap **Update all**
+in the hub's UI. The hub:
 
-1. Looks up the latest commit and broadcasts an update notice carrying that hash,
-   so every remote installs exactly the same version without asking the GitHub
-   API itself.
-2. Runs its own updater and, if anything changed, restarts itself on the new
-   version. Tasks are kept, because they're saved in `tasks.dat`.
+1. Looks up the latest commit hash.
+2. Updates its own files to that commit. If that fails, it stops there and the
+   remotes are not told.
+3. If anything changed, it shuts down and starts again on the new version, so it's
+   up and answering before any remote comes back. Tasks are kept, because they're
+   saved in `tasks.dat`.
+4. Broadcasts an update notice carrying the hash, so every remote installs exactly
+   the same version without asking the GitHub API itself. If the hub was already up
+   to date, it skips the restart and broadcasts straight away.
+
+The notice waits in the `tasks.pending_push` setting while the hub restarts. If the
+hub crashes or the computer reboots in between, the notice goes out the next time the
+hub starts.
 
 On receiving the notice (only from the hub they're connected to):
 

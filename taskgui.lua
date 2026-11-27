@@ -4,7 +4,7 @@
 -- Layout (26x20 pocket shown, scales to any size):
 --   row 1        header: < person > x      (tap the name to manage people)
 --   rows 2..h-3  task list                 (tap a task to select it, scroll if long)
---   rows h-2,h-1 action buttons
+--   rows h-2,h-1 action buttons             (row h-3 too when the caller adds extras)
 --   row h        status line, also the typing line for text input
 
 local pager = require("pager")
@@ -39,8 +39,9 @@ end
 
 -- ctx: state = { people = ... } (kept current by the caller), send(line) -> ok, out | nil, err,
 --      requestState(), me() -> name|nil, remember(name|nil) (both default to the
---      tasks.person setting), status, statusColor (optional first status line), extras ={ { label, action, confirm }, ... } (optional buttons
---      on the People screen; action() runs on a cleared screen and returns quit, status)
+--      tasks.person setting), status, statusColor (optional first status line),
+--      extras = { { label, action, confirm }, ... } (optional extra button row on the main
+--      screen; action() runs on a cleared screen and returns quit, status, statusColor)
 function M.run(ctx)
   ctx.me = ctx.me or defaultMe
   ctx.remember = ctx.remember or defaultRemember
@@ -211,6 +212,25 @@ function M.run(ctx)
     selTask, scroll.main = nil, 0
   end
 
+  local function extraDefs()
+    local defs = {}
+    for _, extra in ipairs(ctx.extras or {}) do
+      local function go()
+        term.setBackgroundColor(colors.black)
+        term.setTextColor(colors.white)
+        term.clear()
+        term.setCursorPos(1, 1)
+        local done, msg, color = extra.action()
+        if done then quit = true end
+        if msg then setStatus(msg, color) end
+      end
+      defs[#defs + 1] = { extra.label, function()
+        if extra.confirm then askConfirm(extra.confirm, go) else go() end
+      end, colors.cyan, colors.black }
+    end
+    return defs
+  end
+
   -- Screens -----------------------------------------------------------------
 
   local function drawMain()
@@ -255,7 +275,13 @@ function M.run(ctx)
         end
       end
     end
-    drawList(rows, 2, h - 3, "main")
+    local extras = extraDefs()
+    local listBottom = h - 3
+    if #extras > 0 then
+      listBottom = h - 4
+      buttonRow(h - 3, extras)
+    end
+    drawList(rows, 2, listBottom, "main")
 
     local hasTasks = p and #p.tasks > 0
     local target = selTask or 1
@@ -339,20 +365,6 @@ function M.run(ctx)
       end, colors.red, colors.white },
       { "Open", current and function() mode, scroll.main = "main", 0 end },
     }
-    for _, extra in ipairs(ctx.extras or {}) do
-      local function go()
-        term.setBackgroundColor(colors.black)
-        term.setTextColor(colors.white)
-        term.clear()
-        term.setCursorPos(1, 1)
-        local done, msg = extra.action()
-        if done then quit = true end
-        if msg then setStatus(msg) end
-      end
-      defs[#defs + 1] = { extra.label, function()
-        if extra.confirm then askConfirm(extra.confirm, go) else go() end
-      end, colors.cyan, colors.black }
-    end
     buttonRow(h - 1, defs)
   end
 

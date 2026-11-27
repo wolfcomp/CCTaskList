@@ -28,13 +28,16 @@ local function wrap(text, width)
   return lines
 end
 
--- opts: monitorName (nil = first found), textScale, pageSeconds
+-- opts: monitorName (nil = first found), textScale, pageSeconds, holdSeconds (how long a
+-- page picked with a person button stays up before rotation resumes)
 function M.new(opts)
   opts = opts or {}
   local textScale = opts.textScale or 0.5
   local pageSeconds = opts.pageSeconds or 8
+  local holdSeconds = opts.holdSeconds or 30
   local monitor, win
   local page = 1
+  local hits = {}
   local self = {}
 
   function self.attach()
@@ -73,8 +76,26 @@ function M.new(opts)
     return math.max(1, math.floor((w * 6 * textScale + 20) / 64 + 0.5))
   end
 
+  local function headColor(idx)
+    return color(HEADER_COLORS[(idx - 1) % #HEADER_COLORS + 1], colors.white)
+  end
+
+  -- Packs one button per person into rows; nil if they need more than maxRows, in which
+  -- case the plain page counter is used instead.
+  local function layoutBar(people, w, maxRows)
+    local buttons, x, row = {}, 1, 1
+    for idx, p in ipairs(people) do
+      local label = (" " .. p.name .. " "):sub(1, w)
+      if x > 1 and x + #label - 1 > w then row, x = row + 1, 1 end
+      buttons[#buttons + 1] = { x = x, row = row, label = label, idx = idx }
+      x = x + #label + 1
+    end
+    if row > maxRows then return nil end
+    return buttons, row
+  end
+
   local function drawColumn(x, width, bottom, p, idx)
-    local head = color(HEADER_COLORS[(idx - 1) % #HEADER_COLORS + 1], colors.white)
+    local head = headColor(idx)
     put(x, 1, (" "):rep(width), colors.black, head)
     local name = p.name:sub(1, width)
     put(x + math.floor((width - #name) / 2), 1, name, colors.black, head)
@@ -120,6 +141,7 @@ function M.new(opts)
     win.setVisible(false)
     win.setBackgroundColor(colors.black)
     win.clear()
+    hits = {}
 
     if #people == 0 then
       centered(math.ceil(h / 2), status or "No tasks", colors.gray)
@@ -127,21 +149,41 @@ function M.new(opts)
       local cols = math.min(blockColumns(w), #people)
       local pages = math.ceil(#people / cols)
       if page > pages then page = 1 end
-      local footer = (pages > 1 or status) and 1 or 0
+      -- Basic monitors can't be touched, so buttons would only cost them rows.
+      local bar, barRows
+      if pages > 1 and win.isColour() then
+        bar, barRows = layoutBar(people, w, math.max(1, math.floor(h / 4)))
+      end
+      local footer = (status or (pages > 1 and not bar)) and 1 or 0
+      local bottom = h - footer - (bar and barRows or 0)
 
       for c = 1, cols do
         local idx = (page - 1) * cols + c
         if people[idx] then
           local x0 = math.floor((c - 1) * w / cols) + 1
           local x1 = math.floor(c * w / cols)
-          drawColumn(x0, x1 - x0 + 1, h - footer, people[idx], idx)
+          drawColumn(x0, x1 - x0 + 1, bottom, people[idx], idx)
+        end
+      end
+
+      if bar then
+        for _, b in ipairs(bar) do
+          local y = bottom + b.row
+          local target = math.ceil(b.idx / cols)
+          local head = headColor(b.idx)
+          if target == page then
+            put(b.x, y, b.label, colors.black, head)
+          else
+            put(b.x, y, b.label, head, colors.gray)
+          end
+          hits[#hits + 1] = { x0 = b.x, x1 = b.x + #b.label - 1, y = y, page = target }
         end
       end
 
       if footer == 1 then
         local parts = {}
         if status then parts[#parts + 1] = status end
-        if pages > 1 then parts[#parts + 1] = ("Page %d/%d"):format(page, pages) end
+        if pages > 1 and not bar then parts[#parts + 1] = ("Page %d/%d"):format(page, pages) end
         centered(h, table.concat(parts, "  "), status and color(colors.red, colors.white) or colors.gray)
       end
     end
@@ -155,17 +197,39 @@ function M.new(opts)
     monitor.clear()
   end
 
+  local function ours(side)
+    return monitor ~= nil and peripheral.getName(monitor) == side
+  end
+
+  -- Returns the page a person button at x, y leads to, if any.
+  local function touched(x, y)
+    for _, t in ipairs(hits) do
+      if y == t.y and x >= t.x0 and x <= t.x1 then return t.page end
+    end
+  end
+
   -- Redraws on "tasks_changed" events; getState() returns people, status.
   function self.run(getState, onPeripheral)
     self.attach()
     self.render(getState())
     local timer = os.startTimer(pageSeconds)
     while true do
-      local ev, a = os.pullEvent()
-      if (ev == "timer" and a == timer) or ev == "monitor_touch" then
+      local ev, a, b, c = os.pullEvent()
+      if ev == "timer" and a == timer then
         page = page + 1
         self.render(getState())
         timer = os.startTimer(pageSeconds)
+      elseif ev == "monitor_touch" and ours(a) then
+        local target = touched(b, c)
+        if target then
+          -- Hold the picked person on screen so rotation doesn't flip away straight after.
+          page = target
+          timer = os.startTimer(holdSeconds)
+        else
+          page = page + 1
+          timer = os.startTimer(pageSeconds)
+        end
+        self.render(getState())
       elseif ev == "tasks_changed" then
         self.render(getState())
       elseif ev == "monitor_resize" or ev == "peripheral" or ev == "peripheral_detach" then

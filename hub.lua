@@ -222,20 +222,48 @@ local function runUpdater(...)
   return res
 end
 
+-- Kept in settings rather than passed as an argument so a push still goes out if the
+-- restart is a reboot or a crash, and so it can't be repeated by later restarts.
+local PENDING_PUSH = "tasks.pending_push"
+settings.define(PENDING_PUSH, {
+  description = "Commit the hub tells remotes to update to once it has restarted ('' = latest)",
+  type = "string",
+})
+
+-- Returns ok, message.
+local function broadcastUpdate(ref)
+  if not rednet.isOpen() then return false, "No modem: remotes can't be told to update." end
+  rednet.broadcast({ update = true, ref = ref }, UPDATE_PROTOCOL)
+  return true, "Told remotes to update" .. (ref and (" to " .. ref:sub(1, 7)) or "")
+end
+
+-- Returns true when the hub must restart to finish the push, or false, message, ok.
+-- Remotes are only told once the hub runs the new version, so when they restart and
+-- reconnect they find a hub that is already up and speaking the same protocol.
 local function pushUpdate()
   -- Resolving the commit once here means every remote installs the same version, and only
   -- the hub spends a call against GitHub's per-IP API rate limit.
   local ref = runUpdater("ref")
   if type(ref) ~= "string" then ref = nil end
-  if rednet.isOpen() then
-    rednet.broadcast({ update = true, ref = ref }, UPDATE_PROTOCOL)
-    print("Told display nodes and clients to update" .. (ref and (" to " .. ref:sub(1, 7)) or "") .. ".")
-  else
-    printError("No modem: remotes can't be told to update.")
-  end
   local changed
   if ref then changed = runUpdater("--ref", ref) else changed = runUpdater() end
-  return (tonumber(changed) or 0) > 0, rednet.isOpen()
+  if changed == nil then return false, "Hub update failed, remotes not told.", false end
+  if changed > 0 then
+    settings.set(PENDING_PUSH, ref or "")
+    settings.save()
+    return true
+  end
+  local told, msg = broadcastUpdate(ref)
+  return false, told and ("Hub up to date. " .. msg) or msg, told
+end
+
+-- Returns nil if no push was waiting, else ok, message.
+local function sendPendingPush()
+  local ref = settings.get(PENDING_PUSH)
+  if ref == nil then return nil end
+  settings.unset(PENDING_PUSH)
+  settings.save()
+  return broadcastUpdate(ref ~= "" and ref or nil)
 end
 
 local canGui = term.isColour()
@@ -253,13 +281,15 @@ local function cliLoop()
     if line == "gui" and canGui then return "gui" end
     -- Kept off the rednet command set so a remote client can't trigger a network-wide update.
     if line == "pushupdate" then
-      if pushUpdate() then return "restart" end
+      local restart, msg, ok = pushUpdate()
+      if restart then return "restart" end
+      pager.lines({ msg }, ok and colors.white or colors.red)
     else
       local ok, out = run(line)
       if line == "help" then
         -- Copied so the shared help list sent to remote clients doesn't gain the console-only entries.
         local lines = { table.unpack(out) }
-        lines[#lines + 1] = "pushupdate - update remotes, then this hub (console only)"
+        lines[#lines + 1] = "pushupdate - update this hub, restart, then update remotes (console only)"
         if canGui then lines[#lines + 1] = "gui - open the clickable UI (console only)" end
         pager.help(lines)
       else
@@ -288,27 +318,32 @@ local function banner()
   for _, w in ipairs(warnings()) do printError(w) end
 end
 
+-- Shown once after a restart, so the GUI or the prompt can say what happened to the push.
+local pushOk, pushMsg
+
 -- Returns "restart" if an update from the UI needs the hub to restart.
 local function guiLoop()
   local result
-  local warn = warnings()[1]
+  local status, statusColor = warnings()[1], colors.red
+  if pushMsg then status, statusColor = pushMsg, pushOk and colors.lime or colors.red end
+  pushMsg = nil
   taskgui.run({
     -- Commands only ever change people in place, so this table stays current.
     state = { people = people },
     send = run,
     requestState = function() os.queueEvent("task_state") end,
-    status = warn,
-    statusColor = warn and colors.red,
+    status = status,
+    statusColor = status and statusColor,
     extras = { {
-      label = "Update",
-      confirm = "Update every computer from git?",
+      label = "Update all",
+      confirm = "Update the hub and every remote from git?",
       action = function()
-        local changed, told = pushUpdate()
-        if changed then
+        local restart, msg, ok = pushUpdate()
+        if restart then
           result = "restart"
           return true
         end
-        return false, told and "Remotes told, hub up to date" or "No modem, hub up to date"
+        return false, msg, ok and colors.lime or colors.red
       end,
     } },
   })
@@ -319,7 +354,13 @@ local restart = false
 
 local function consoleLoop()
   local useGui = canGui and (args[1] or ""):lower() ~= "cli"
-  if not useGui then banner() end
+  if not useGui then
+    banner()
+    if pushMsg then
+      if pushOk then print(pushMsg) else printError(pushMsg) end
+      pushMsg = nil
+    end
+  end
   while true do
     local result
     if useGui then
@@ -338,6 +379,8 @@ end
 
 loadData()
 openModems()
+pushOk, pushMsg = sendPendingPush()
+if pushMsg and pushOk then pushMsg = "Hub restarted. " .. pushMsg end
 
 parallel.waitForAny(consoleLoop, netLoop, displayLoop)
 
