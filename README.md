@@ -67,11 +67,12 @@ remember its own person.
 
 The monitors on the hub and display nodes are touch screens too. Tap anywhere in a
 person's column (or anywhere on an empty board) and the monitor switches to the same
-UI for that person, with Add, Done, Top, Skip, Clear and the People screen. There's
+UI for that person, with Add, Done, Top, Skip, Edit, Clear and the People screen. There's
 no **Me** button, because a shared monitor doesn't belong to anyone.
 
-- Monitors have no keyboard, so every button that needs text (**Add**, **New** and
-  the header's **+**) switches the monitor to a full-screen on-screen keyboard. The
+- Monitors have no keyboard, so every button that needs text (**Add**, **Edit**,
+  **New** and the header's **+**) switches the monitor to a full-screen on-screen
+  keyboard (for **Edit** it starts with the task's current text). The
   top row says what's being asked for, the white row below shows what you've typed,
   and the keys (digits, letters and `- , . '`) grow to fill the monitor. The bottom
   row has Shift, Space, Del, Cancel and **OK**, shown as `↑ _ < x OK` on monitors
@@ -84,9 +85,15 @@ no **Me** button, because a shared monitor doesn't belong to anyone.
 - Only taps on that monitor count, so someone using the computer's own screen at
   the same time doesn't interfere.
 - This needs an Advanced Monitor, since basic monitors can't be touched.
-- On narrow monitors (1 block wide is 15 characters at the default text scale) the
-  buttons are cramped but still work. A 2-wide monitor gives the same room as a
-  pocket computer.
+- On narrow monitors (1 block wide is 14 characters at the default text scale) the
+  buttons are cramped but still work. A 2-wide monitor (36 characters) gives more
+  room than a pocket computer.
+- On big monitors the editing UI uses a larger text scale than the board, so buttons
+  and keyboard keys get physically bigger instead of tiny. It picks the largest scale
+  that still leaves at least 26x20 characters (a pocket computer's screen). Up to 3x3
+  stays at the board's scale; 4x4 and up get bigger text (for example about 39x26
+  at scale 1 on a 4x4). The board's own scale comes back when the UI closes. Change
+  the minimum with `uiMinWidth` / `uiMinHeight` in the `taskview.new` options.
 
 ```
 +--------------------------+
@@ -97,7 +104,7 @@ no **Me** button, because a shared monitor doesn't belong to anyone.
 |  north base             v|  (mouse wheel and Up/Down also scroll)
 |                          |
 |  Add    Done #2   Top #2 |
-|  Skip    Clear      Me   |
+| Skip  Edit  Clear  Me    |
 |Done: Sort chests         |  status line / typing line
 +--------------------------+
 ```
@@ -107,6 +114,7 @@ no **Me** button, because a shared monitor doesn't belong to anyone.
 | Add      | Type a task on the bottom row, Enter to add (blank cancels)    |
 | Done     | Finish the selected task, or the current one if none selected  |
 | Top      | Make the selected task the current one                         |
+| Edit     | Change the selected task (or the current one); its text starts filled in |
 | Skip     | Send the current task to the back                              |
 | Clear    | Remove all of this person's tasks (asks Yes/No first)          |
 | Me / Not me | Remember (or forget) this person as you, like `tasks as`    |
@@ -183,6 +191,7 @@ alone for a prompt). Person names are single words and case-insensitive.
 | `add <person> <task>`     | Queue a task (creates the person if new)       |
 | `done <person> [n]`       | Finish the current task, or task number `n`    |
 | `top <person> <n>`        | Make task `n` the current task                 |
+| `edit <person> <n> <text>` | Replace the text of task `n`                  |
 | `skip <person>`           | Send the current task to the back of the queue |
 | `clear <person>`          | Remove all of a person's tasks                 |
 | `list [person]`           | Everyone's current task, or one person's queue |
@@ -220,6 +229,7 @@ person can be left out:
 | `add Fix the pump`   | `add Alex Fix the pump`|
 | `done` / `done 3`    | `done Alex` / `done Alex 3` |
 | `top 2`, `skip`, `clear` | same, for Alex     |
+| `edit 2 Mine gold`   | `edit Alex 2 Mine gold` |
 | `done Sam`           | `done Sam` (a name still wins) |
 | `add @Sam Mine iron` | `add Sam Mine iron`    |
 
@@ -326,7 +336,8 @@ hub console, so a remote client can't trigger a network-wide update.
 Constants at the top of `hub.lua`:
 
 - `MONITOR_NAME`: pin a specific monitor (`"top"`, `"monitor_0"`), otherwise the first found.
-- `TEXT_SCALE`: `0.5` gives 15 characters per block column. Raising it fits fewer, bigger letters.
+- `TEXT_SCALE`: `0.5` fits 14 characters on a 1-wide monitor and 36 on a 2-wide one.
+  Raising it fits fewer, bigger letters.
 - `PAGE_SECONDS`: page rotation interval.
 - `MONITOR_IDLE_SECONDS`: how long the monitor's editing UI stays open without a tap.
 - `HOSTNAME` / `PROTOCOL` / `STATE_PROTOCOL`: change them here, in `tasks.lua` and in

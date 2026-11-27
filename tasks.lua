@@ -13,7 +13,7 @@ local TIMEOUT = 3
 local PERSON_SETTING = "tasks.person"
 
 -- Commands whose first argument is a person, so a remembered name can stand in for it.
-local PERSON_COMMANDS = { add = true, done = true, top = true, skip = true, clear = true }
+local PERSON_COMMANDS = { add = true, done = true, edit = true, top = true, skip = true, clear = true }
 
 settings.define(PERSON_SETTING, {
   description = "Person the tasks client acts as when no name is given",

@@ -123,6 +123,15 @@ command("done", "<person> [n] ", "finish the current task, or task n", function(
   return out
 end)
 
+command("edit", "<person> <n> <text> ", "change the text of task n", function(a)
+  local p = needPerson(a[2])
+  local i = needTask(p, a[3])
+  if not a[4] then error("Usage: edit <person> <n> <text>", 0) end
+  p.tasks[i] = table.concat(a, " ", 4)
+  saveData()
+  return ("Edited #%d for %s"):format(i, p.name)
+end)
+
 command("top", "<person> <n> ", "make task n the current task", function(a)
   local p = needPerson(a[2])
   local i = needTask(p, a[3])

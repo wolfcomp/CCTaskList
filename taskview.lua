@@ -29,12 +29,15 @@ local function wrap(text, width)
 end
 
 -- opts: monitorName (nil = first found), textScale, pageSeconds, holdSeconds (how long a
--- page picked with a person button stays up before rotation resumes)
+-- page picked with a person button stays up before rotation resumes), uiMinWidth and
+-- uiMinHeight (smallest character grid the monitor's editing UI may be scaled down to)
 function M.new(opts)
   opts = opts or {}
   local textScale = opts.textScale or 0.5
   local pageSeconds = opts.pageSeconds or 8
   local holdSeconds = opts.holdSeconds or 30
+  local uiMinWidth = opts.uiMinWidth or 26
+  local uiMinHeight = opts.uiMinHeight or 20
   local monitor, win
   local page = 1
   local hits = {}
@@ -211,6 +214,25 @@ function M.new(opts)
     end
   end
 
+  -- Picks the largest text scale that still leaves the editing UI at least uiMinWidth x
+  -- uiMinHeight characters (a pocket computer's 26x20 by default), so on big monitors the
+  -- buttons and keyboard keys grow instead of staying finger-tip small at the board's scale.
+  -- The board's own scale comes back with the next attach().
+  function self.uiWindow()
+    local best = textScale
+    for s = 5, textScale, -0.5 do
+      monitor.setTextScale(s)
+      local w, h = monitor.getSize()
+      if w >= uiMinWidth and h >= uiMinHeight then
+        best = s
+        break
+      end
+    end
+    monitor.setTextScale(best)
+    local w, h = monitor.getSize()
+    return window.create(monitor, 1, 1, w, h, true)
+  end
+
   -- Redraws on "tasks_changed" events; getState() returns people, status.
   -- manage(target, side, person), if given, runs the clickable UI on the monitor until it
   -- closes; tapping a person's column opens it.
@@ -231,10 +253,10 @@ function M.new(opts)
           page = t.page
           timer = os.startTimer(holdSeconds)
         elseif t and t.manage and manage then
-          win.setVisible(true)
           -- A peripheral detaching mid-edit throws; the board just redraws after it.
-          local ok, err = pcall(manage, win, a, t.person)
+          local ok, err = pcall(function() manage(self.uiWindow(), a, t.person) end)
           if not ok and err == "Terminated" then error(err, 0) end
+          self.attach()
           if not ok then
             -- Shown rather than swallowed, so a broken UI isn't mistaken for a missing feature.
             -- Guarded too, because the monitor may be the thing that went away.
@@ -248,7 +270,6 @@ function M.new(opts)
             end)
             sleep(8)
           end
-          self.attach()
           timer = os.startTimer(pageSeconds)
         else
           page = page + 1

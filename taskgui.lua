@@ -236,8 +236,8 @@ function M.run(ctx)
 
   -- Full-screen on-screen keyboard. Returns the typed text, or nil when cancelled.
   -- Layout: row 1 prompt, row 2 the text so far, then the keys, then Shift/Space/Del/Cancel/OK.
-  local function touchInput(label)
-    local s, shift, result = "", false, nil
+  local function touchInput(label, default)
+    local s, shift, result = default or "", false, nil
     local function add(ch) s = s .. ch end
 
     while result == nil do
@@ -301,18 +301,18 @@ function M.run(ctx)
     return result or nil
   end
 
-  -- Reads a line on the bottom row; blank input cancels.
-  local function input(label)
+  -- Reads a line on the bottom row, starting from default if given; blank input cancels.
+  local function input(label, default)
     local s
     if ctx.touch then
-      s = touchInput(label)
+      s = touchInput(label, default)
     else
       fill(1, h - 1, w, colors.black)
       text(1, h - 1, ("Type, Enter. Blank cancels"):sub(1, w), colors.lightGray, colors.black)
       fill(1, h, w, colors.black)
       text(1, h, label, colors.yellow, colors.black)
       scr.setTextColor(colors.white)
-      s = read()
+      s = read(nil, nil, nil, default)
     end
     s = s and s:match("^%s*(.-)%s*$") or ""
     if s == "" then
@@ -372,7 +372,7 @@ function M.run(ctx)
     local isMe = p and same(p.name, me)
 
     fill(1, 1, w, colors.blue)
-    -- Narrow monitors (15 columns) need one-column arrows to leave room for the name.
+    -- Narrow monitors (14 columns) need one-column arrows to leave room for the name.
     local aw = w >= 20 and 3 or 1
     button(w - 2, w, 1, "x", function() quit = true end, colors.red, colors.white)
     button(w - 5, w - 3, 1, "+", newPerson, colors.green, colors.white)
@@ -443,6 +443,15 @@ function M.run(ctx)
         run("skip " .. p.name)
         selTask = nil
       end },
+      { "Edit", hasTasks and function()
+        local old = p.tasks[target]
+        local s = input("Edit #" .. target .. ": ", old)
+        if s == old then
+          setStatus("No change")
+        elseif s then
+          run("edit " .. p.name .. " " .. target .. " " .. s)
+        end
+      end, colors.orange, colors.black },
       { "Clear", hasTasks and function()
         askConfirm("Clear all of " .. p.name .. "'s tasks?", function() run("clear " .. p.name) end)
       end, colors.red, colors.white },
