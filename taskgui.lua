@@ -1,5 +1,5 @@
 -- Task GUI: clickable front end for the hub, display nodes and the tasks client on advanced
--- computers and pocket computers.
+-- computers and pocket computers, and on touch monitors.
 --
 -- Layout (26x20 pocket shown, scales to any size):
 --   row 1        header: < person > x      (tap the name to manage people)
@@ -13,7 +13,9 @@ local M = {}
 
 local POLL_SECONDS = 30
 -- CC's font has CP437 glyphs at these codes.
-local ARROW_LEFT, ARROW_RIGHT, ARROW_UP, ARROW_DOWN = "\17", "\16", "\30", "\31"
+local ARROW_LEFT, ARROW_RIGHT, ARROW_UP, ARROW_DOWN, SHIFT = "\17", "\16", "\30", "\31", "\24"
+-- Monitors have no keyboard, so text is typed on these keys instead.
+local KEY_ROWS = { "1234567890", "qwertyuiop", "asdfghjkl-", "zxcvbnm,.'" }
 
 -- Shared with tasks.lua, so the hub, display nodes and clients all remember "me" the same way.
 local PERSON_SETTING = "tasks.person"
@@ -41,13 +43,18 @@ end
 --      requestState(), me() -> name|nil, remember(name|nil) (both default to the
 --      tasks.person setting), status, statusColor (optional first status line),
 --      extras = { { label, action, confirm }, ... } (optional extra button row on the main
---      screen; action() runs on a cleared screen and returns quit, status, statusColor)
+--      screen; action() runs on a cleared screen and returns quit, status, statusColor),
+--      term + touch (draw on that redirect target and take monitor_touch events from the
+--      monitor named touch instead of the mouse and keyboard), person (start on them),
+--      idleSeconds (close after this long without a tap)
 function M.run(ctx)
-  ctx.me = ctx.me or defaultMe
+  local scr = ctx.term or term
+  -- A shared monitor has no single owner, so it has no "me".
+  ctx.me = ctx.me or (ctx.touch and function() end) or defaultMe
   ctx.remember = ctx.remember or defaultRemember
-  local w, h = term.getSize()
+  local w, h = scr.getSize()
   local mode = "main" -- or "people"
-  local selPerson, selTask
+  local selPerson, selTask = ctx.person, nil
   local scroll = { main = 0, people = 0 }
   local status, statusColor = ctx.status or "Tap a task to select it", ctx.statusColor or colors.lightGray
   local confirm -- { question = "...", action = function }
@@ -79,20 +86,45 @@ function M.run(ctx)
     status, statusColor = s or "", color or colors.lightGray
   end
 
+  -- Events ------------------------------------------------------------------
+
+  local idleTimer = ctx.idleSeconds and os.startTimer(ctx.idleSeconds)
+
+  -- In touch mode the computer's own mouse and keyboard belong to whatever runs on its
+  -- terminal, so only taps on our monitor count, and they are handed on as clicks.
+  local function pull()
+    while true do
+      local ev, a, b, c = os.pullEvent()
+      if not ctx.touch then return ev, a, b, c end
+      if ev == "monitor_touch" then
+        if a == ctx.touch then
+          if idleTimer then idleTimer = os.startTimer(ctx.idleSeconds) end
+          return "mouse_click", 1, b, c
+        end
+      elseif ev == "monitor_resize" then
+        if a == ctx.touch then return "term_resize" end
+      elseif ev == "timer" and a == idleTimer then
+        return "idle"
+      elseif ev ~= "mouse_click" and ev ~= "mouse_scroll" and ev ~= "key" and ev ~= "term_resize" then
+        return ev, a, b, c
+      end
+    end
+  end
+
   -- Drawing -----------------------------------------------------------------
 
   local function fill(x, y, width, bg)
     if width < 1 then return end
-    term.setCursorPos(x, y)
-    term.setBackgroundColor(bg)
-    term.write((" "):rep(width))
+    scr.setCursorPos(x, y)
+    scr.setBackgroundColor(bg)
+    scr.write((" "):rep(width))
   end
 
   local function text(x, y, s, fg, bg)
-    term.setCursorPos(x, y)
-    term.setTextColor(fg)
-    term.setBackgroundColor(bg)
-    term.write(s)
+    scr.setCursorPos(x, y)
+    scr.setTextColor(fg)
+    scr.setBackgroundColor(bg)
+    scr.write(s)
   end
 
   local function hit(x0, x1, y, action)
@@ -141,16 +173,16 @@ function M.run(ctx)
       if row then
         local bg = row.bg or colors.black
         fill(1, y, width, bg)
-        term.setCursorPos(1, y)
-        term.setBackgroundColor(bg)
+        scr.setCursorPos(1, y)
+        scr.setBackgroundColor(bg)
         local used = 0
         if row.prefix then
-          term.setTextColor(row.prefixFg or row.fg or colors.white)
-          term.write(row.prefix)
+          scr.setTextColor(row.prefixFg or row.fg or colors.white)
+          scr.write(row.prefix)
           used = #row.prefix
         end
-        term.setTextColor(row.fg or colors.white)
-        term.write(row.text:sub(1, width - used))
+        scr.setTextColor(row.fg or colors.white)
+        scr.write(row.text:sub(1, width - used))
         if row.action then hit(1, width, y, row.action) end
       end
     end
@@ -171,6 +203,24 @@ function M.run(ctx)
     text(1, h, status:sub(1, w), statusColor, colors.black)
   end
 
+  -- Monitors are drawn off screen and shown at once, since a visible clear flickers there.
+  local function hide() if scr.setVisible then scr.setVisible(false) end end
+  local function show() if scr.setVisible then scr.setVisible(true) end end
+
+  local function click(x, y)
+    for i = #hits, 1, -1 do
+      local hb = hits[i]
+      if y == hb.y and x >= hb.x0 and x <= hb.x1 then
+        hb.action()
+        return
+      end
+    end
+    if confirm then
+      confirm = nil
+      setStatus("Cancelled")
+    end
+  end
+
   -- Actions -----------------------------------------------------------------
 
   local function run(line)
@@ -184,14 +234,75 @@ function M.run(ctx)
     end
   end
 
+  -- Returns the typed text, or nil when cancelled.
+  local function touchInput(label)
+    local s, shift, result = "", false, nil
+    local wide = w >= 30
+    local function add(ch) s = s .. ch end
+
+    while result == nil do
+      hide()
+      hits = {}
+      local top = math.max(1, h - #KEY_ROWS - 1)
+      for y = top, h do fill(1, y, w, colors.black) end
+
+      local room = w - #label
+      local shown = #s > room and (ARROW_LEFT .. s:sub(-(room - 1))) or s
+      text(1, top, label, colors.yellow, colors.black)
+      text(#label + 1, top, shown, colors.white, colors.black)
+
+      local kw = math.max(1, math.min(3, math.floor(w / 10)))
+      local x = math.floor((w - kw * 10) / 2) + 1
+      for r, row in ipairs(KEY_ROWS) do
+        local y = top + r
+        if y >= h then break end
+        for i = 1, #row do
+          local ch = row:sub(i, i)
+          if shift then ch = ch:upper() end
+          local x0 = x + (i - 1) * kw
+          -- Alternating shades keep single-column keys distinguishable.
+          local light = (i + r) % 2 == 0
+          button(x0, x0 + kw - 1, y, ch, function()
+            add(ch)
+            shift = false
+          end, light and colors.lightGray or colors.gray, light and colors.black or colors.white)
+        end
+      end
+
+      buttonRow(h, {
+        { wide and "Shift" or SHIFT, function() shift = not shift end, shift and colors.yellow or colors.lightGray },
+        { wide and "Space" or "_", function() add(" ") end },
+        { wide and "Del" or ARROW_LEFT, function() s = s:sub(1, -2) end },
+        { wide and "Cancel" or "x", function() result = false end, colors.red, colors.white },
+        { "OK", function() result = s end, colors.green, colors.white },
+      })
+      show()
+
+      local ev, _, b, c = pull()
+      if ev == "idle" then
+        quit, result = true, false
+      elseif ev == "mouse_click" then
+        click(b, c)
+      elseif ev == "term_resize" then
+        w, h = scr.getSize()
+      end
+    end
+    return result or nil
+  end
+
   -- Reads a line on the bottom row; blank input cancels.
   local function input(label)
-    fill(1, h - 1, w, colors.black)
-    text(1, h - 1, ("Type, Enter. Blank cancels"):sub(1, w), colors.lightGray, colors.black)
-    fill(1, h, w, colors.black)
-    text(1, h, label, colors.yellow, colors.black)
-    term.setTextColor(colors.white)
-    local s = read()
+    local s
+    if ctx.touch then
+      s = touchInput(label)
+    else
+      fill(1, h - 1, w, colors.black)
+      text(1, h - 1, ("Type, Enter. Blank cancels"):sub(1, w), colors.lightGray, colors.black)
+      fill(1, h, w, colors.black)
+      text(1, h, label, colors.yellow, colors.black)
+      scr.setTextColor(colors.white)
+      s = read()
+    end
     s = s and s:match("^%s*(.-)%s*$") or ""
     if s == "" then
       setStatus("Cancelled")
@@ -299,7 +410,7 @@ function M.run(ctx)
         selTask = 1
       end },
     })
-    buttonRow(h - 1, {
+    local second = {
       { "Skip", (p and #p.tasks > 1) and function()
         run("skip " .. p.name)
         selTask = nil
@@ -307,7 +418,9 @@ function M.run(ctx)
       { "Clear", hasTasks and function()
         askConfirm("Clear all of " .. p.name .. "'s tasks?", function() run("clear " .. p.name) end)
       end, colors.red, colors.white },
-      { isMe and "Not me" or "Me", p and function()
+    }
+    if not ctx.touch then
+      second[#second + 1] = { isMe and "Not me" or "Me", p and function()
         if isMe then
           ctx.remember(nil)
           setStatus("Forgot who you are")
@@ -315,14 +428,16 @@ function M.run(ctx)
           ctx.remember(p.name)
           setStatus("You are " .. p.name .. " now", colors.lime)
         end
-      end, colors.purple, colors.white },
-    })
+      end, colors.purple, colors.white }
+    end
+    buttonRow(h - 1, second)
   end
 
   local function drawPeople()
     fill(1, 1, w, colors.blue)
     local title = "People"
     text(math.floor((w - #title) / 2) + 1, 1, title, colors.white, colors.blue)
+    button(w - 2, w, 1, "x", function() quit = true end, colors.red, colors.white)
 
     local me = ctx.me()
     local current = selected()
@@ -348,7 +463,7 @@ function M.run(ctx)
     if #rows == 0 then rows = messageRows("Nobody here yet. Tap New.") end
     drawList(rows, 2, h - 2, "people")
 
-    local defs = {
+    buttonRow(h - 1, {
       { "New", function()
         local s = input("Name: ")
         if not s then return end
@@ -364,8 +479,7 @@ function M.run(ctx)
         askConfirm("Remove " .. name .. " and all their tasks?", function() run("delperson " .. name) end)
       end, colors.red, colors.white },
       { "Open", current and function() mode, scroll.main = "main", 0 end },
-    }
-    buttonRow(h - 1, defs)
+    })
   end
 
   local function drawConfirm()
@@ -392,28 +506,16 @@ function M.run(ctx)
   end
 
   local function redraw()
-    w, h = term.getSize()
+    w, h = scr.getSize()
     hits = {}
-    term.setCursorBlink(false)
-    term.setBackgroundColor(colors.black)
-    term.clear()
+    hide()
+    scr.setCursorBlink(false)
+    scr.setBackgroundColor(colors.black)
+    scr.clear()
     if mode == "people" then drawPeople() else drawMain() end
     if confirm then drawConfirm() end
     drawStatus()
-  end
-
-  local function click(x, y)
-    for i = #hits, 1, -1 do
-      local t = hits[i]
-      if y == t.y and x >= t.x0 and x <= t.x1 then
-        t.action()
-        return
-      end
-    end
-    if confirm then
-      confirm = nil
-      setStatus("Cancelled")
-    end
+    show()
   end
 
   -- Event loop ----------------------------------------------------------------
@@ -423,7 +525,7 @@ function M.run(ctx)
   ctx.requestState()
   local poll = os.startTimer(POLL_SECONDS)
   while not quit do
-    local ev, a, b, c = os.pullEvent()
+    local ev, a, b, c = pull()
     local dirty = true
     if ev == "mouse_click" then
       click(b, c)
@@ -431,6 +533,8 @@ function M.run(ctx)
       scroll[mode] = scroll[mode] + a
     elseif ev == "key" and (a == keys.up or a == keys.down) then
       scroll[mode] = scroll[mode] + (a == keys.up and -1 or 1)
+    elseif ev == "idle" then
+      quit = true
     elseif ev == "timer" and a == poll then
       ctx.requestState()
       poll = os.startTimer(POLL_SECONDS)
@@ -442,10 +546,11 @@ function M.run(ctx)
     if dirty and not quit then redraw() end
   end
 
-  term.setBackgroundColor(colors.black)
-  term.setTextColor(colors.white)
-  term.clear()
-  term.setCursorPos(1, 1)
+  scr.setBackgroundColor(colors.black)
+  scr.setTextColor(colors.white)
+  scr.clear()
+  scr.setCursorPos(1, 1)
+  show()
 end
 
 return M

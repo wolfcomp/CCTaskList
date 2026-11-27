@@ -145,6 +145,7 @@ function M.new(opts)
 
     if #people == 0 then
       centered(math.ceil(h / 2), status or "No tasks", colors.gray)
+      for y = 1, h do hits[#hits + 1] = { x0 = 1, x1 = w, y = y, manage = true } end
     else
       local cols = math.min(blockColumns(w), #people)
       local pages = math.ceil(#people / cols)
@@ -163,6 +164,9 @@ function M.new(opts)
           local x0 = math.floor((c - 1) * w / cols) + 1
           local x1 = math.floor(c * w / cols)
           drawColumn(x0, x1 - x0 + 1, bottom, people[idx], idx)
+          for y = 1, bottom do
+            hits[#hits + 1] = { x0 = x0, x1 = x1, y = y, manage = true, person = people[idx].name }
+          end
         end
       end
 
@@ -201,15 +205,16 @@ function M.new(opts)
     return monitor ~= nil and peripheral.getName(monitor) == side
   end
 
-  -- Returns the page a person button at x, y leads to, if any.
   local function touched(x, y)
     for _, t in ipairs(hits) do
-      if y == t.y and x >= t.x0 and x <= t.x1 then return t.page end
+      if y == t.y and x >= t.x0 and x <= t.x1 then return t end
     end
   end
 
   -- Redraws on "tasks_changed" events; getState() returns people, status.
-  function self.run(getState, onPeripheral)
+  -- manage(target, side, person), if given, runs the clickable UI on the monitor until it
+  -- closes; tapping a person's column opens it.
+  function self.run(getState, onPeripheral, manage)
     self.attach()
     self.render(getState())
     local timer = os.startTimer(pageSeconds)
@@ -220,11 +225,18 @@ function M.new(opts)
         self.render(getState())
         timer = os.startTimer(pageSeconds)
       elseif ev == "monitor_touch" and ours(a) then
-        local target = touched(b, c)
-        if target then
+        local t = touched(b, c)
+        if t and t.page then
           -- Hold the picked person on screen so rotation doesn't flip away straight after.
-          page = target
+          page = t.page
           timer = os.startTimer(holdSeconds)
+        elseif t and t.manage and manage then
+          win.setVisible(true)
+          -- A peripheral detaching mid-edit throws; the board just redraws after it.
+          local ok, err = pcall(manage, win, a, t.person)
+          if not ok and err == "Terminated" then error(err, 0) end
+          self.attach()
+          timer = os.startTimer(pageSeconds)
         else
           page = page + 1
           timer = os.startTimer(pageSeconds)

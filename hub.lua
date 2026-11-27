@@ -17,6 +17,9 @@ local DATA_FILE = "tasks.dat"
 local MONITOR_NAME = nil -- e.g. "top" or "monitor_0"; nil uses the first monitor found
 local TEXT_SCALE = 0.5
 local PAGE_SECONDS = 8
+-- The monitor goes back to the board after this long without a tap, so a walk-away
+-- doesn't leave it stuck on one person.
+local MONITOR_IDLE_SECONDS = 60
 
 -- people[i] = { name = "Alex", tasks = { "current task", "next task", ... } }
 local people = {}
@@ -180,7 +183,17 @@ local function openModems()
 end
 
 local function displayLoop()
-  view.run(function() return people end, openModems)
+  view.run(function() return people end, openModems, function(target, side, person)
+    taskgui.run({
+      state = { people = people },
+      send = run,
+      requestState = function() os.queueEvent("task_state") end,
+      term = target,
+      touch = side,
+      person = person,
+      idleSeconds = MONITOR_IDLE_SECONDS,
+    })
+  end)
 end
 
 local function netLoop()

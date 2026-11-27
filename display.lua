@@ -17,6 +17,9 @@ local PAGE_SECONDS = 8
 -- The hub pushes every change instantly; polling only covers missed pushes and hub restarts.
 local POLL_SECONDS = 15
 local TIMEOUT = 3
+-- The monitor goes back to the board after this long without a tap, so a walk-away
+-- doesn't leave it stuck on one person.
+local MONITOR_IDLE_SECONDS = 60
 
 local view = taskview.new({ monitorName = MONITOR_NAME, textScale = TEXT_SCALE, pageSeconds = PAGE_SECONDS })
 local people = {}
@@ -142,7 +145,19 @@ banner()
 local restart = false
 local loops = {
   function() restart = netLoop() end,
-  function() view.run(getState, openModems) end,
+  function()
+    view.run(getState, openModems, function(target, side, person)
+      taskgui.run({
+        state = guiState,
+        send = send,
+        requestState = request,
+        term = target,
+        touch = side,
+        person = person,
+        idleSeconds = MONITOR_IDLE_SECONDS,
+      })
+    end)
+  end,
 }
 -- Basic computers get no mouse events, so their terminal keeps the status text.
 if term.isColour() and (args[1] or ""):lower() ~= "cli" then loops[#loops + 1] = terminalLoop end

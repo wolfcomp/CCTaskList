@@ -63,6 +63,25 @@ screen, not the monitor) when they're advanced computers:
 Everyone shares the `tasks.person` setting for **Me**, so each computer can
 remember its own person.
 
+### Editing on the monitor
+
+The monitors on the hub and display nodes are touch screens too. Tap anywhere in a
+person's column (or anywhere on an empty board) and the monitor switches to the same
+UI for that person, with Add, Done, Top, Skip, Clear and the People screen. There's
+no **Me** button, because a shared monitor doesn't belong to anyone.
+
+- Monitors have no keyboard, so **Add** and **New** bring up an on-screen keyboard:
+  letters, digits and `- , . '`, plus Shift, Space, Del (`_` and `<` on narrow
+  monitors), Cancel (`x`) and **OK**. Shift applies to the next letter only.
+- `x` in the header goes back to the board, and so does 60 seconds without a tap
+  (`MONITOR_IDLE_SECONDS`).
+- Only taps on that monitor count, so someone using the computer's own screen at
+  the same time doesn't interfere.
+- This needs an Advanced Monitor, since basic monitors can't be touched.
+- On narrow monitors (1 block wide is 15 characters at the default text scale) the
+  buttons are cramped but still work. A 2-wide monitor gives the same room as a
+  pocket computer.
+
 ```
 +--------------------------+
 |<<      Alex (me)     >> x|  tap < > to switch person, the name for People
@@ -133,13 +152,15 @@ size, so a small node can page through people while a wide one shows them all.
 
 - One person per monitor block column. A 1-wide monitor shows one person at a time;
   a 3-wide monitor shows three side by side.
-- If there are more people than columns, pages rotate every 8 seconds (tap the
-  monitor to flip early). A row of person buttons appears along the bottom, one per
+- If there are more people than columns, pages rotate every 8 seconds. A row of
+  person buttons appears along the bottom, one per
   person in their column colour, with the people on screen lit up. Tap a name to
   jump to that person; their page stays up for 30 seconds before rotation carries
   on. Names wrap onto extra rows if needed (up to a quarter of the monitor height).
   If they still don't fit, or the monitor is a basic one that can't be touched, a
-  `Page x/y` line is shown instead.
+  `Page x/y` line is shown instead; tap it to flip early.
+- Tapping a person's column opens the editing UI on the monitor (see
+  [Editing on the monitor](#editing-on-the-monitor)).
 - Long tasks word-wrap. If a queue doesn't fit, the last line shows `+N more`.
 - Data is saved to `tasks.dat` on the hub after every change, so it survives
   restarts and chunk unloads.
@@ -299,8 +320,10 @@ Constants at the top of `hub.lua`:
 - `MONITOR_NAME`: pin a specific monitor (`"top"`, `"monitor_0"`), otherwise the first found.
 - `TEXT_SCALE`: `0.5` gives 15 characters per block column. Raising it fits fewer, bigger letters.
 - `PAGE_SECONDS`: page rotation interval.
+- `MONITOR_IDLE_SECONDS`: how long the monitor's editing UI stays open without a tap.
 - `HOSTNAME` / `PROTOCOL` / `STATE_PROTOCOL`: change them here, in `tasks.lua` and in
   `display.lua` to run several independent hubs.
 
-`display.lua` has the same `MONITOR_NAME`, `TEXT_SCALE` and `PAGE_SECONDS` settings,
+`display.lua` has the same `MONITOR_NAME`, `TEXT_SCALE`, `PAGE_SECONDS` and
+`MONITOR_IDLE_SECONDS` settings,
 plus `POLL_SECONDS` for how often it checks in with the hub.
